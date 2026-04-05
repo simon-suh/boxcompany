@@ -1,0 +1,398 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────
+#  BoxCo — Local development stack
+#  Single Kafka broker, replication factor 1
+#  For production (3 brokers, RF=3) see k8s/kafka/
+# ─────────────────────────────────────────────
+
+networks:
+  boxco-net:
+    driver: bridge
+
+volumes:
+  kafka-data:
+  zookeeper-data:
+  zookeeper-log:
+  postgres-data:
+  dynamodb-data:
+
+services:
+
+  # ── ZOOKEEPER ──────────────────────────────
+  # Kafka uses Zookeeper for broker coordination.
+  # In production we use KRaft mode (no Zookeeper)
+  # but Zookeeper is simpler for local dev.
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: boxco-zookeeper
+    networks:
+      - boxco-net
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── KAFKA BROKER ───────────────────────────
+  # Single broker for local dev.
+  # Replication factor 1 — no fault tolerance,
+  # but functionally identical to a 3-broker setup
+  # for development and demo purposes.
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: boxco-kafka
+    networks:
+      - boxco-net
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"       # external access from host machine
+      - "29092:29092"     # internal access between containers
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: EXTERNAL:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://localhost:9092,INTERNAL://kafka:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"  # topics created explicitly below
+      KAFKA_LOG_RETENTION_HOURS: 168            # keep messages for 7 days
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_NUM_PARTITIONS: 3
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ── SCHEMA REGISTRY ────────────────────────
+  # Enforces event contracts for all Kafka topics.
+  # Producers must register a schema before publishing.
+  # Consumers validate incoming messages against it.
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.0
+    container_name: boxco-schema-registry
+    networks:
+      - boxco-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ── KAFKA TOPIC INIT ───────────────────────
+  # One-shot container that creates all 4 topics
+  # on first startup. Exits after topics are created.
+  # Partitions: 3 (parallelism within the broker)
+  # Replication factor: 1 (single broker — dev only)
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: boxco-kafka-init
+    networks:
+      - boxco-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      echo 'Waiting for Kafka to be ready...'
+      sleep 5
+
+      echo 'Creating topic: orders.created'
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+        --topic orders.created \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000
+
+      echo 'Creating topic: orders.shipped'
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+        --topic orders.shipped \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000
+
+      echo 'Creating topic: inventory.updated'
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+        --topic inventory.updated \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000
+
+      echo 'Creating topic: errors.reported'
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+        --topic errors.reported \
+        --partitions 3 \
+        --replication-factor 1 \
+        --config retention.ms=604800000
+
+      echo 'Listing all topics:'
+      kafka-topics --bootstrap-server kafka:29092 --list
+
+      echo 'Kafka topic init complete.'
+      "
+    restart: "no"
+
+  # ── KAFKA UI ───────────────────────────────
+  # Visual dashboard to inspect topics, messages,
+  # consumer groups, and Schema Registry.
+  # Access at http://localhost:8080
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: boxco-kafka-ui
+    networks:
+      - boxco-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: boxco-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      DYNAMIC_CONFIG_ENABLED: "true"
+
+  # ── POSTGRES (SALES DB) ────────────────────
+  # Relational DB for the Sales team.
+  # Stores customers, orders, and payment info.
+  # Schema initialized from config/postgres/init.sql
+  postgres:
+    image: postgres:16
+    container_name: boxco-postgres
+    networks:
+      - boxco-net
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: sales_db
+      POSTGRES_USER: ${POSTGRES_USER:-sales_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sales_user} -d sales_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── DYNAMODB LOCAL (SHIPMENT + INVENTORY DB) 
+  # AWS DynamoDB emulator for local development.
+  # In production this points to real AWS DynamoDB.
+  # Both shipment and inventory tables live here locally.
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: boxco-dynamodb
+    networks:
+      - boxco-net
+    ports:
+      - "8000:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/shell/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── DYNAMODB TABLE INIT ────────────────────
+  # One-shot container that creates shipment and
+  # inventory tables in DynamoDB local on first run.
+  dynamodb-init:
+    image: amazon/aws-cli:latest
+    container_name: boxco-dynamodb-init
+    networks:
+      - boxco-net
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      echo 'Creating shipment table...'
+      aws dynamodb create-table \
+        --table-name shipments \
+        --attribute-definitions AttributeName=orderId,AttributeType=S \
+        --key-schema AttributeName=orderId,KeyType=HASH \
+        --billing-mode PAY_PER_REQUEST \
+        --endpoint-url http://dynamodb-local:8000 || echo 'Table may already exist'
+
+      echo 'Creating inventory table...'
+      aws dynamodb create-table \
+        --table-name inventory \
+        --attribute-definitions AttributeName=productId,AttributeType=S \
+        --key-schema AttributeName=productId,KeyType=HASH \
+        --billing-mode PAY_PER_REQUEST \
+        --endpoint-url http://dynamodb-local:8000 || echo 'Table may already exist'
+
+      echo 'Seeding inventory — Scenario 1 state...'
+      aws dynamodb put-item \
+        --table-name inventory \
+        --item '{\"productId\":{\"S\":\"small-box\"},\"name\":{\"S\":\"Small box\"},\"stock\":{\"N\":\"500\"},\"reserved\":{\"N\":\"0\"}}' \
+        --endpoint-url http://dynamodb-local:8000
+
+      aws dynamodb put-item \
+        --table-name inventory \
+        --item '{\"productId\":{\"S\":\"medium-box\"},\"name\":{\"S\":\"Medium box\"},\"stock\":{\"N\":\"0\"},\"reserved\":{\"N\":\"0\"}}' \
+        --endpoint-url http://dynamodb-local:8000
+
+      aws dynamodb put-item \
+        --table-name inventory \
+        --item '{\"productId\":{\"S\":\"large-box\"},\"name\":{\"S\":\"Large box\"},\"stock\":{\"N\":\"300\"},\"reserved\":{\"N\":\"0\"}}' \
+        --endpoint-url http://dynamodb-local:8000
+
+      echo 'DynamoDB init complete.'
+      "
+    restart: "no"
+
+  # ── SALES API ──────────────────────────────
+  # Handles order submission from the Sales frontend.
+  # Publishes to orders.created on Kafka.
+  # Reads inventory stock levels before accepting orders.
+  sales-api:
+    build:
+      context: ./services/sales-api
+      dockerfile: Dockerfile
+    container_name: boxco-sales-api
+    networks:
+      - boxco-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      KAFKA_BROKERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: sales_db
+      POSTGRES_USER: ${POSTGRES_USER:-sales_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      INVENTORY_API_URL: http://inventory-api:3003
+      SCENARIO: ${SCENARIO:-1}
+    restart: unless-stopped
+
+  # ── SHIPMENT API ───────────────────────────
+  # Consumes orders.created from Kafka.
+  # Stores tracking info in DynamoDB.
+  # Publishes to orders.shipped on Kafka.
+  shipment-api:
+    build:
+      context: ./services/shipment-api
+      dockerfile: Dockerfile
+    container_name: boxco-shipment-api
+    networks:
+      - boxco-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+      dynamodb-local:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      KAFKA_BROKERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      DYNAMODB_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      SCENARIO: ${SCENARIO:-1}
+    restart: unless-stopped
+
+  # ── INVENTORY API ──────────────────────────
+  # Manages stock levels in DynamoDB.
+  # Publishes to inventory.updated on Kafka.
+  # Consumed by sales-api for stock checks.
+  inventory-api:
+    build:
+      context: ./services/inventory-api
+      dockerfile: Dockerfile
+    container_name: boxco-inventory-api
+    networks:
+      - boxco-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+      dynamodb-local:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      KAFKA_BROKERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      DYNAMODB_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      SCENARIO: ${SCENARIO:-1}
+    restart: unless-stopped
+
+  # ── NOTIFICATION SERVICE ───────────────────
+  # Consumes orders.created and orders.shipped.
+  # Sends email via SendGrid and SMS via Twilio.
+  # In local dev, logs notifications instead of sending.
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: boxco-notification-service
+    networks:
+      - boxco-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-dev-mode}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-dev-mode}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-dev-mode}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-+10000000000}
+      NOTIFICATION_MODE: ${NOTIFICATION_MODE:-log}  # "log" locally, "send" in production
+    restart: unless-stopped

@@ -1,0 +1,83 @@
+{
+  "orders.created": {
+    "type": "record",
+    "name": "OrderCreated",
+    "namespace": "com.boxco.events",
+    "doc": "Published by Sales API when a new order is successfully submitted. Consumed by Shipment API and Notification Service.",
+    "fields": [
+      { "name": "eventId",       "type": "string",  "doc": "Unique ID for this event (UUID)" },
+      { "name": "orderNumber",   "type": "string",  "doc": "Human-readable order number e.g. ORD-10421" },
+      { "name": "orderId",       "type": "string",  "doc": "Internal UUID of the order in Sales DB" },
+      { "name": "customerName",  "type": "string" },
+      { "name": "customerEmail", "type": ["null", "string"], "default": null },
+      { "name": "customerPhone", "type": ["null", "string"], "default": null },
+      { "name": "items", "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "OrderItem",
+          "fields": [
+            { "name": "productId",   "type": "string" },
+            { "name": "productName", "type": "string" },
+            { "name": "quantity",    "type": "int" }
+          ]
+        }
+      }},
+      { "name": "paymentMethod", "type": "string" },
+      { "name": "status",        "type": "string",  "default": "pending" },
+      { "name": "createdAt",     "type": "string",  "doc": "ISO 8601 timestamp" }
+    ]
+  },
+
+  "orders.shipped": {
+    "type": "record",
+    "name": "OrderShipped",
+    "namespace": "com.boxco.events",
+    "doc": "Published by Shipment API when tracking info is uploaded. Consumed by Notification Service.",
+    "fields": [
+      { "name": "eventId",       "type": "string" },
+      { "name": "orderNumber",   "type": "string" },
+      { "name": "orderId",       "type": "string" },
+      { "name": "customerName",  "type": "string" },
+      { "name": "customerEmail", "type": ["null", "string"], "default": null },
+      { "name": "customerPhone", "type": ["null", "string"], "default": null },
+      { "name": "carrier",       "type": "string",  "doc": "e.g. UPS, FedEx, USPS, DHL" },
+      { "name": "trackingNumber","type": "string" },
+      { "name": "shippedAt",     "type": "string",  "doc": "ISO 8601 timestamp" }
+    ]
+  },
+
+  "inventory.updated": {
+    "type": "record",
+    "name": "InventoryUpdated",
+    "namespace": "com.boxco.events",
+    "doc": "Published by Inventory API when stock count changes. Consumed by Sales API to keep stock levels fresh.",
+    "fields": [
+      { "name": "eventId",      "type": "string" },
+      { "name": "productId",    "type": "string",  "doc": "e.g. small-box, medium-box, large-box" },
+      { "name": "productName",  "type": "string" },
+      { "name": "previousStock","type": "int" },
+      { "name": "newStock",     "type": "int" },
+      { "name": "reason",       "type": "string",  "doc": "e.g. restock, order-reserved, adjustment" },
+      { "name": "updatedAt",    "type": "string" }
+    ]
+  },
+
+  "errors.reported": {
+    "type": "record",
+    "name": "ErrorReported",
+    "namespace": "com.boxco.events",
+    "doc": "Published by any team when an issue is reported. Consumed by the responsible team's API and the dev team's alerting pipeline.",
+    "fields": [
+      { "name": "eventId",      "type": "string" },
+      { "name": "reportId",     "type": "string" },
+      { "name": "orderNumber",  "type": ["null", "string"], "default": null },
+      { "name": "reportedBy",   "type": "string",  "doc": "sales | shipment | inventory" },
+      { "name": "issueType",    "type": "string",  "doc": "e.g. out-of-stock, wrong-tracking, quantity-mismatch" },
+      { "name": "description",  "type": "string" },
+      { "name": "notifyTeams",  "type": { "type": "array", "items": "string" },
+        "doc": "List of teams to notify e.g. [sales, inventory, dev]" },
+      { "name": "createdAt",    "type": "string" }
+    ]
+  }
+}
