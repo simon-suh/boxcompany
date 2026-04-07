@@ -1,9 +1,9 @@
 import os
+import uuid
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, ARRAY, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.sql import func
 
-# ── Database connection ────────────────────────────────────────────────────────
 POSTGRES_HOST     = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT     = os.getenv("POSTGRES_PORT", "5432")
 POSTGRES_DB       = os.getenv("POSTGRES_DB", "sales_db")
@@ -19,11 +19,6 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-
-# ── SQLAlchemy models ──────────────────────────────────────────────────────────
-# These mirror the tables created by config/postgres/init.sql
-# SQLAlchemy uses them to query and insert rows — it does not create the tables
-# (the init.sql handles that on first Postgres startup)
 
 class Customer(Base):
     __tablename__ = "customers"
@@ -67,7 +62,6 @@ class ErrorReport(Base):
     created_at   = Column(DateTime(timezone=True), server_default=func.now())
 
 
-# ── Dependency for FastAPI routes ──────────────────────────────────────────────
 def get_db():
     db = SessionLocal()
     try:
