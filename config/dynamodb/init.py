@@ -66,6 +66,7 @@ items = [
     {'productId': 'small-box',  'name': 'Small box',  'stock': 500, 'reserved': 0},
     {'productId': 'medium-box', 'name': 'Medium box', 'stock': 0,   'reserved': 0},
     {'productId': 'large-box',  'name': 'Large box',  'stock': 300, 'reserved': 0},
+    {'productId': 'xl-box',     'name': 'XL box',     'stock': 150, 'reserved': 0},
 ]
 for item in items:
     table.put_item(Item=item)
