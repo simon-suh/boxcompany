@@ -276,8 +276,12 @@ async function loadInventory() {
 }
 
 function renderStockCards(products) {
+  // Sort products in the correct order: Small, Medium, Large
+  const order = { 'small-box': 1, 'medium-box': 2, 'large-box': 3 };
+  const sorted = products.sort((a, b) => order[a.productId] - order[b.productId]);
+  
   const grid = document.getElementById('stock-grid');
-  grid.innerHTML = products.map(p => {
+  grid.innerHTML = sorted.map(p => {
     const isOut = p.available === 0;
     const dotClass = isOut ? 'dot-out' : 'dot-in';
     const countClass = isOut ? 'out' : 'in';
