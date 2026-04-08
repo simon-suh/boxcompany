@@ -79,6 +79,17 @@ def _handle_order_created(event: dict):
             new_stock = max(0, current_stock - quantity)  # Don't go below 0
 
             update_stock(product_id, new_stock)
+
+            # Publish inventory.updated event so frontends know stock changed
+            from kafka_producer import publish_inventory_updated
+            publish_inventory_updated(
+                product_id=product_id,
+                product_name=product.get("name", product_id),
+                previous_stock=current_stock,
+                new_stock=new_stock,
+                reason="order-reserved"
+            )
+
             print(f"[Kafka] Decremented {product_id}: {current_stock} → {new_stock} "
                   f"(order {order_number}, qty {quantity})")
 
