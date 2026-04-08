@@ -235,17 +235,17 @@
   <!-- Stock bar -->
   <div class="stock-bar" id="stock-bar">
     <div class="stock-pill">
-      <span class="stock-dot dot-in"></span>
+      <span class="stock-dot dot-in" id="dot-small"></span>
       <span class="label">Small box</span>
       <span class="count" id="count-small">...</span>
     </div>
     <div class="stock-pill">
-      <span class="stock-dot dot-out"></span>
+      <span class="stock-dot dot-out" id="dot-medium"></span>
       <span class="label">Medium box</span>
       <span class="count" id="count-medium">0 units</span>
     </div>
     <div class="stock-pill">
-      <span class="stock-dot dot-in"></span>
+      <span class="stock-dot dot-in" id="dot-large"></span>
       <span class="label">Large box</span>
       <span class="count" id="count-large">...</span>
     </div>
@@ -265,20 +265,20 @@
   <!-- Order form -->
   <div class="card">
     <div class="section-label">Customer details</div>
-    <div class="form-grid">
-      <div class="field">
-        <label>Customer name</label>
-        <input type="text" id="f-name" placeholder="Full name"/>
-      </div>
-      <div class="field">
-        <label>Phone number</label>
-        <input type="tel" id="f-phone" placeholder="+1 (555) 000-0000"/>
-      </div>
-      <div class="field full">
-        <label>Email address</label>
-        <input type="email" id="f-email" placeholder="customer@email.com"/>
-      </div>
-    </div>
+<div class="form-grid">
+  <div class="field">
+    <label>Customer name</label>
+    <input type="text" id="f-name" placeholder="Full name"/>
+  </div>
+  <div class="field">
+    <label>Phone number</label>
+    <input type="tel" id="f-phone" placeholder="+1 (555) 000-0000" pattern="[\+]?[0-9\s\-\(\)]{10,20}" title="Please enter a valid phone number (10-20 digits)"/>
+  </div>
+  <div class="field full">
+    <label>Email address</label>
+    <input type="email" id="f-email" placeholder="customer@email.com" pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}" title="Please enter a valid email address"/>
+  </div>
+</div>
 
     <div class="section-label" style="margin-top:24px">Order items</div>
     <table class="items-table">
@@ -291,7 +291,7 @@
       </thead>
       <tbody>
         <tr>
-          <td><span class="size-tag"><span class="dot dot-in"></span>Small box</span></td>
+          <td><span class="size-tag"><span class="dot dot-in" id="dot-small-table"></span>Small box</span></td>
           <td><span class="avail in" id="avail-small">500 units</span></td>
           <td>
             <div class="qty-wrap">
@@ -301,8 +301,8 @@
           </td>
         </tr>
         <tr>
-          <td><span class="size-tag"><span class="dot dot-out"></span>Medium box</span></td>
-          <td><span class="avail out">0 units — out of stock</span></td>
+          <td><span class="size-tag"><span class="dot dot-out" id="dot-medium-table"></span>Medium box</span></td>
+          <td><span class="avail out" id="avail-medium">0 units — out of stock</span></td>
           <td>
             <div class="qty-wrap">
               <input class="qty-input" id="qty-medium" type="number" min="0" value="0" oninput="validateQty('medium')"/>
@@ -311,7 +311,7 @@
           </td>
         </tr>
         <tr>
-          <td><span class="size-tag"><span class="dot dot-in"></span>Large box</span></td>
+          <td><span class="size-tag"><span class="dot dot-in" id="dot-large-table"></span>Large box</span></td>
           <td><span class="avail in" id="avail-large">300 units</span></td>
           <td>
             <div class="qty-wrap">
@@ -379,12 +379,77 @@ async function loadInventory() {
     data.products.forEach(p => {
       inventory[p.productId] = p.available;
     });
-    const s = inventory['small-box'] ?? 500;
-    const l = inventory['large-box'] ?? 300;
+    const s = inventory['small-box'] ?? 0;
+    const m = inventory['medium-box'] ?? 0;
+    const l = inventory['large-box'] ?? 0;
+    
+    // Update counts
     document.getElementById('count-small').textContent = `${s} units`;
+    document.getElementById('count-medium').textContent = `${m} units`;
     document.getElementById('count-large').textContent = `${l} units`;
     document.getElementById('avail-small').textContent = `${s} units`;
+    document.getElementById('avail-medium').textContent = m > 0 ? `${m} units` : '0 units — out of stock';
     document.getElementById('avail-large').textContent = `${l} units`;
+    
+    // Update small box indicator
+    const smallDot = document.getElementById('dot-small');
+    const smallTableDot = document.getElementById('dot-small-table');
+    const smallAvail = document.getElementById('avail-small');
+    if (s > 0) {
+      smallDot.classList.remove('dot-out');
+      smallDot.classList.add('dot-in');
+      smallTableDot.classList.remove('dot-out');
+      smallTableDot.classList.add('dot-in');
+      smallAvail.classList.remove('out');
+      smallAvail.classList.add('in');
+    } else {
+      smallDot.classList.remove('dot-in');
+      smallDot.classList.add('dot-out');
+      smallTableDot.classList.remove('dot-in');
+      smallTableDot.classList.add('dot-out');
+      smallAvail.classList.remove('in');
+      smallAvail.classList.add('out');
+    }
+    
+    // Update medium box indicator
+    const mediumDot = document.getElementById('dot-medium');
+    const mediumTableDot = document.getElementById('dot-medium-table');
+    const mediumAvail = document.getElementById('avail-medium');
+    if (m > 0) {
+      mediumDot.classList.remove('dot-out');
+      mediumDot.classList.add('dot-in');
+      mediumTableDot.classList.remove('dot-out');
+      mediumTableDot.classList.add('dot-in');
+      mediumAvail.classList.remove('out');
+      mediumAvail.classList.add('in');
+    } else {
+      mediumDot.classList.remove('dot-in');
+      mediumDot.classList.add('dot-out');
+      mediumTableDot.classList.remove('dot-in');
+      mediumTableDot.classList.add('dot-out');
+      mediumAvail.classList.remove('in');
+      mediumAvail.classList.add('out');
+    }
+    
+    // Update large box indicator
+    const largeDot = document.getElementById('dot-large');
+    const largeTableDot = document.getElementById('dot-large-table');
+    const largeAvail = document.getElementById('avail-large');
+    if (l > 0) {
+      largeDot.classList.remove('dot-out');
+      largeDot.classList.add('dot-in');
+      largeTableDot.classList.remove('dot-out');
+      largeTableDot.classList.add('dot-in');
+      largeAvail.classList.remove('out');
+      largeAvail.classList.add('in');
+    } else {
+      largeDot.classList.remove('dot-in');
+      largeDot.classList.add('dot-out');
+      largeTableDot.classList.remove('dot-in');
+      largeTableDot.classList.add('dot-out');
+      largeAvail.classList.remove('in');
+      largeAvail.classList.add('out');
+    }
   } catch(e) {
     console.error('Could not load inventory:', e);
   }
@@ -426,7 +491,7 @@ function validateQty(size) {
     return true;
   }
 
-  const avail = inventory[`${size}-box`] ?? (size === 'small' ? 500 : 300);
+  const avail = inventory[`${size}-box`] ?? 0;
   if (val > avail) {
     input.classList.add('err');
     errEl.textContent = `Only ${avail} units available`;
@@ -456,7 +521,27 @@ async function submitOrder() {
   const qL = parseInt(document.getElementById('qty-large').value) || 0;
   const errEl = document.getElementById('form-err');
 
+  // Validation
   if (!name) { showErr('Please enter a customer name.'); return; }
+  
+  // Phone validation (if provided)
+  if (phone) {
+    const phonePattern = /^[\+]?[0-9\s\-\(\)]{10,20}$/;
+    if (!phonePattern.test(phone)) {
+      showErr('Please enter a valid phone number (10-20 digits, spaces, dashes, and parentheses allowed).');
+      return;
+    }
+  }
+  
+  // Email validation (if provided)
+  if (email) {
+    const emailPattern = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+    if (!emailPattern.test(email)) {
+      showErr('Please enter a valid email address.');
+      return;
+    }
+  }
+  
   if (qS === 0 && qM === 0 && qL === 0) { showErr('Please enter a quantity for at least one product.'); return; }
   if (!validateQty('small') || !validateQty('large')) { showErr('One or more quantities exceed available stock.'); return; }
   if (!selectedPay) { showErr('Please select a payment method.'); return; }
@@ -527,6 +612,11 @@ async function submitOrder() {
     loadOrders();
     loadInventory();
 
+    // Hide confirmation card after 3 seconds
+    setTimeout(() => {
+      document.getElementById('confirm-card').classList.remove('show');
+    }, 3000);
+
   } catch(e) {
     showErr('Could not connect to the Sales API. Make sure the server is running.');
   } finally {
@@ -543,7 +633,9 @@ function showErr(msg) {
 
 loadInventory();
 loadOrders();
+setInterval(loadInventory, 10000);
+setInterval(loadOrders, 15000);
+
 </script>
 </body>
 </html>
-
