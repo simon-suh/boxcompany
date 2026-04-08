@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db, Customer, Order, OrderItem, ErrorReport
 from kafka_producer import publish_order_created, publish_error_reported
+from kafka_consumer import start_consumer
 
 app = FastAPI(
     title       = "BoxCo Sales API",
@@ -36,7 +37,17 @@ app.add_middleware(
 SCENARIO = int(os.getenv("SCENARIO", "1"))
 INVENTORY_API_URL = os.getenv("INVENTORY_API_URL", "http://inventory-api:3003")
 
-
+# ── Start Kafka consumer on app startup ──────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    """
+    Starts the Kafka consumer background thread when FastAPI starts.
+    The consumer listens for orders.shipped events and updates
+    order status in PostgreSQL.
+    """
+    start_consumer()
+    print(f"[Startup] Sales API running — Scenario {SCENARIO}")
+    
 class OrderItemRequest(BaseModel):
     product_id:   str
     product_name: str
