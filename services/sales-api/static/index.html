@@ -36,7 +36,7 @@
   html { font-size: 15px; }
   body { 
     font-family: 'DM Sans', sans-serif; 
-    background: #b0b0b0; 
+    background: linear-gradient(to bottom, #ffffff 0%, #808080 40%, #808080 100%); 
     color: var(--text); 
     min-height: 100vh; 
   }
@@ -228,7 +228,7 @@
 
 <div class="topbar">
   <span class="brand">BOXCO / Sales portal</span>
-  <span class="scenario-tag">Scenario 3</span>
+  <span class="scenario-tag">Scenario 2</span>
 </div>
 
 <div class="page">
@@ -251,11 +251,6 @@
       <span class="stock-dot dot-in" id="dot-large"></span>
       <span class="label">Large box</span>
       <span class="count" id="count-large">...</span>
-    </div>
-    <div class="stock-pill">
-      <span class="stock-dot dot-in" id="dot-xl"></span>
-      <span class="label">XL box</span>
-      <span class="count" id="count-xl">...</span>
     </div>
   </div>
 
@@ -328,16 +323,6 @@
             </div>
           </td>
         </tr>
-        <tr>
-          <td><span class="size-tag"><span class="dot dot-in" id="dot-xl-table"></span>XL box</span></td>
-          <td><span class="avail in" id="avail-xl">150 units</span></td>
-          <td>
-            <div class="qty-wrap">
-              <input class="qty-input" id="qty-xl" type="number" min="0" value="0" oninput="validateQty('xl')"/>
-              <span class="qty-err" id="err-xl"></span>
-            </div>
-          </td>
-        </tr>
       </tbody>
     </table>
 
@@ -400,17 +385,14 @@ async function loadInventory() {
     const s = inventory['small-box'] ?? 0;
     const m = inventory['medium-box'] ?? 0;
     const l = inventory['large-box'] ?? 0;
-    const x = inventory['xl-box'] ?? 0;
-
+    
     // Update counts
     document.getElementById('count-small').textContent = `${s} units`;
     document.getElementById('count-medium').textContent = `${m} units`;
     document.getElementById('count-large').textContent = `${l} units`;
-    document.getElementById('count-xl').textContent = `${x} units`;
     document.getElementById('avail-small').textContent = `${s} units`;
     document.getElementById('avail-medium').textContent = m > 0 ? `${m} units` : '0 units — out of stock';
     document.getElementById('avail-large').textContent = `${l} units`;
-    document.getElementById('avail-xl').textContent = `${x} units`;
     
     // Update small box indicator
     const smallDot = document.getElementById('dot-small');
@@ -471,27 +453,6 @@ async function loadInventory() {
       largeAvail.classList.remove('in');
       largeAvail.classList.add('out');
     }
-
-    // Update XL box indicator
-    const xlDot = document.getElementById('dot-xl');
-    const xlTableDot = document.getElementById('dot-xl-table');
-    const xlAvail = document.getElementById('avail-xl');
-    if (x > 0) {
-      xlDot.classList.remove('dot-out');
-      xlDot.classList.add('dot-in');
-      xlTableDot.classList.remove('dot-out');
-      xlTableDot.classList.add('dot-in');
-      xlAvail.classList.remove('out');
-      xlAvail.classList.add('in');
-    } else {
-      xlDot.classList.remove('dot-in');
-      xlDot.classList.add('dot-out');
-      xlTableDot.classList.remove('dot-in');
-      xlTableDot.classList.add('dot-out');
-      xlAvail.classList.remove('in');
-      xlAvail.classList.add('out');
-    }
-
   } catch(e) {
     console.error('Could not load inventory:', e);
   }
@@ -561,7 +522,6 @@ async function submitOrder() {
   const qS = parseInt(document.getElementById('qty-small').value) || 0;
   const qM = parseInt(document.getElementById('qty-medium').value) || 0;
   const qL = parseInt(document.getElementById('qty-large').value) || 0;
-  const qX = parseInt(document.getElementById('qty-xl').value) || 0;
   const errEl = document.getElementById('form-err');
 
   // Validation
@@ -585,8 +545,8 @@ async function submitOrder() {
     }
   }
   
-  if (qS === 0 && qM === 0 && qL === 0 && qX === 0) { showErr('Please enter a quantity for at least one product.'); return; }
-  if (!validateQty('small') || !validateQty('large') || !validateQty('xl')) { showErr('One or more quantities exceed available stock.'); return; }
+  if (qS === 0 && qM === 0 && qL === 0) { showErr('Please enter a quantity for at least one product.'); return; }
+  if (!validateQty('small') || !validateQty('large')) { showErr('One or more quantities exceed available stock.'); return; }
   if (!selectedPay) { showErr('Please select a payment method.'); return; }
   errEl.classList.remove('show');
 
@@ -594,7 +554,6 @@ async function submitOrder() {
   if (qS > 0) items.push({ product_id: 'small-box', product_name: 'Small box', quantity: qS });
   if (qM > 0) items.push({ product_id: 'medium-box', product_name: 'Medium box', quantity: qM });
   if (qL > 0) items.push({ product_id: 'large-box', product_name: 'Large box', quantity: qL });
-  if (qX > 0) items.push({ product_id: 'xl-box', product_name: 'XL box', quantity: qX });
 
   const btn = document.getElementById('submit-btn');
   btn.disabled = true;
@@ -646,7 +605,6 @@ async function submitOrder() {
     document.getElementById('qty-small').value = 0;
     document.getElementById('qty-medium').value = 0;
     document.getElementById('qty-large').value = 0;
-    document.getElementById('qty-xl').value = 0;
     document.getElementById('medium-warn').classList.remove('show');
     selectedPay = '';
     ['card','invoice','ach','check'].forEach(p => {
@@ -678,8 +636,8 @@ function showErr(msg) {
 
 loadInventory();
 loadOrders();
-setInterval(loadInventory, 5000);  // Refresh every 5 seconds
-setInterval(loadOrders, 5000);  // Refresh every 5 seconds
+setInterval(loadInventory, 5000);
+setInterval(loadOrders, 5000);
 
 </script>
 </body>
