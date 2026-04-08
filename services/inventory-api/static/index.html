@@ -9,8 +9,8 @@
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  :root {
-    --bg: #ffffff;
+:root {
+    --bg: #ffffff;  /* Keep this as solid white for cards/topbar */
     --surface: #f7f7f5;
     --border: #e8e8e4;
     --border-strong: #d0d0ca;
@@ -34,14 +34,21 @@
   }
 
   html { font-size: 15px; }
-  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  body { 
+    font-family: 'DM Sans', sans-serif; 
+    background: linear-gradient(to bottom, #ffffff 0%, #f5f5f5 100%); 
+    color: var(--text); 
+    min-height: 100vh; 
+  }
 
   .topbar {
     position: sticky; top: 0; z-index: 100;
-    background: var(--bg); border-bottom: 1px solid var(--border);
+    background: var(--bg);  /* Now uses solid white, which is correct */
+    border-bottom: 1px solid var(--border);
     padding: 0 32px; height: 52px;
     display: flex; align-items: center; justify-content: space-between;
   }
+  
   .brand { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; letter-spacing: 0.04em; }
   .scenario-tag {
     font-family: 'DM Mono', monospace; font-size: 11px;
@@ -182,7 +189,7 @@
 
 <div class="topbar">
   <span class="brand">BOXCO / Inventory portal</span>
-  <span class="scenario-tag">Scenario 1</span>
+  <span class="scenario-tag">Scenario 2</span>
 </div>
 
 <div class="page">

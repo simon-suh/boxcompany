@@ -65,14 +65,9 @@ def generate_order_number() -> str:
 async def check_stock(product_id: str, quantity_requested: int) -> dict:
     """
     Checks stock for a product via the Inventory API.
-
-    SCENARIO 1 BUG: medium boxes bypass the stock check entirely.
-    SCENARIO 2 FIX: all products go through the real stock check.
+    
+    In Scenario 2, all products properly check stock before allowing orders.
     """
-    if SCENARIO == 1 and product_id == "medium-box":
-        print(f"[Scenario 1] Skipping stock check for {product_id} — known bug")
-        return {"available": 0, "in_stock": True}
-
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(
