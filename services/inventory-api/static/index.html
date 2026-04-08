@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BoxCo — Inventory portal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --border: #e8e8e4;
+    --border-strong: #d0d0ca;
+    --text: #1a1a18;
+    --text-muted: #6b6b65;
+    --text-hint: #9e9e96;
+    --accent: #1a1a18;
+    --success-bg: #f0faf4;
+    --success-border: #a3d9b5;
+    --success-text: #1a5c35;
+    --error-bg: #fdf2f2;
+    --error-border: #f0b8b8;
+    --error-text: #7c1c1c;
+    --warn-bg: #fffbf0;
+    --warn-border: #f0d890;
+    --warn-text: #7c5c00;
+    --radius: 6px;
+    --radius-lg: 10px;
+    --in-stock: #2a9d5c;
+    --out-stock: #e84040;
+  }
+
+  html { font-size: 15px; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--bg); border-bottom: 1px solid var(--border);
+    padding: 0 32px; height: 52px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; letter-spacing: 0.04em; }
+  .scenario-tag {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    padding: 3px 10px; border-radius: 20px;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  .page { max-width: 900px; margin: 0 auto; padding: 40px 32px 80px; }
+  .page-title { font-size: 26px; font-weight: 300; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .page-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 32px; }
+
+  .section-label {
+    font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-hint);
+    margin-bottom: 12px;
+  }
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+
+  /* Stock cards */
+  .stock-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+  .stock-card {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 22px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .stock-card.out-of-stock { border-color: var(--error-border); background: var(--error-bg); }
+  .stock-card-header { display: flex; align-items: center; justify-content: space-between; }
+  .stock-name { font-size: 14px; font-weight: 500; }
+  .stock-status-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot-in { background: var(--in-stock); }
+  .dot-out { background: var(--out-stock); }
+  .stock-count { font-family: 'DM Mono', monospace; font-size: 36px; font-weight: 300; line-height: 1; }
+  .stock-count.out { color: var(--out-stock); }
+  .stock-count.in { color: var(--text); }
+  .stock-label { font-size: 12px; color: var(--text-muted); }
+  .update-btn {
+    margin-top: 4px; height: 34px; padding: 0 14px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: var(--bg); color: var(--text); cursor: pointer;
+    font-size: 12px; font-family: 'DM Sans', sans-serif;
+    transition: background 0.12s, border-color 0.12s;
+    align-self: flex-start;
+  }
+  .update-btn:hover { background: var(--surface); border-color: var(--accent); }
+  .stock-card.out-of-stock .update-btn { background: #fff; }
+
+  /* Update panel */
+  .update-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 24px; margin-bottom: 24px;
+    display: none;
+  }
+  .update-panel.show { display: block; }
+  .update-title { font-size: 14px; font-weight: 500; margin-bottom: 16px; }
+  .update-title span { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text-muted); }
+
+  .uform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+  .field input, .field select {
+    height: 36px; padding: 0 11px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font-size: 13px; font-family: 'DM Sans', sans-serif;
+    color: var(--text); background: var(--bg); outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field input[readonly] { background: var(--surface); color: var(--text-muted); }
+
+  .uform-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .btn-primary {
+    height: 38px; padding: 0 20px;
+    background: var(--accent); color: #fff; border: none;
+    border-radius: var(--radius); font-size: 13px; font-weight: 500;
+    font-family: 'DM Sans', sans-serif; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-cancel {
+    height: 38px; padding: 0 16px;
+    background: var(--bg); color: var(--text-muted);
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer;
+  }
+  .btn-cancel:hover { background: var(--surface); }
+
+  .update-success {
+    margin-top: 14px; padding: 11px 14px;
+    background: var(--success-bg); border: 1px solid var(--success-border);
+    border-radius: var(--radius); font-size: 13px; color: var(--success-text);
+    display: none;
+  }
+  .update-success.show { display: block; }
+
+  /* Activity log */
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 20px; }
+  .log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .log-table th {
+    font-size: 11px; font-weight: 500; color: var(--text-hint);
+    text-align: left; padding: 12px 14px; letter-spacing: 0.06em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .log-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .log-table tr:last-child td { border: none; }
+  .log-table tr:hover td { background: var(--surface); }
+
+  .mono { font-family: 'DM Mono', monospace; font-size: 12px; }
+  .muted { color: var(--text-muted); }
+
+  .change-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500;
+    padding: 2px 8px; border-radius: 20px;
+  }
+  .change-up { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+  .change-down { background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-border); }
+  .change-zero { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
+
+  .reason-tag {
+    display: inline-block; font-size: 11px; padding: 2px 7px;
+    border-radius: 4px; background: var(--surface);
+    border: 1px solid var(--border); color: var(--text-muted);
+  }
+
+  .refresh-btn {
+    font-size: 12px; padding: 5px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg); color: var(--text-muted); cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .refresh-btn:hover { background: var(--surface); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">BOXCO / Inventory portal</span>
+  <span class="scenario-tag">Scenario 1</span>
+</div>
+
+<div class="page">
+  <h1 class="page-title">Inventory dashboard</h1>
+  <p class="page-sub">Current stock levels. Update counts when new stock is received.</p>
+
+  <!-- Stock cards -->
+  <div class="section-label">Current stock</div>
+  <div class="stock-grid" id="stock-grid">
+    <div class="stock-card">
+      <div class="stock-card-header">
+        <span class="stock-name">Loading...</span>
+        <span class="stock-status-dot"></span>
+      </div>
+      <div class="stock-count">...</div>
+      <div class="stock-label">units available</div>
+    </div>
+  </div>
+
+  <!-- Update panel -->
+  <div class="update-panel" id="update-panel">
+    <div class="update-title">Update stock — <span id="update-product-label"></span></div>
+    <div class="uform-grid">
+      <div class="field">
+        <label>Product</label>
+        <input type="text" id="u-product" readonly/>
+      </div>
+      <div class="field">
+        <label>Current stock</label>
+        <input type="number" id="u-current" readonly/>
+      </div>
+      <div class="field">
+        <label>New stock count</label>
+        <input type="number" id="u-new" min="0" placeholder="Enter new total"/>
+      </div>
+      <div class="field">
+        <label>Reason</label>
+        <select id="u-reason">
+          <option value="restock">Restock — received new shipment</option>
+          <option value="adjustment">Manual adjustment</option>
+          <option value="order-reserved">Order reserved</option>
+        </select>
+      </div>
+    </div>
+    <div class="uform-actions">
+      <button class="btn-primary" id="u-submit" onclick="submitUpdate()">Update stock</button>
+      <button class="btn-cancel" onclick="closeUpdate()">Cancel</button>
+    </div>
+    <div class="update-success" id="update-success"></div>
+  </div>
+
+  <!-- Activity log -->
+  <div class="section-header">
+    <span class="section-label">Stock activity log</span>
+    <button class="refresh-btn" onclick="loadInventory()">Refresh</button>
+  </div>
+  <div class="card">
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Previous</th>
+          <th>New</th>
+          <th>Change</th>
+          <th>Reason</th>
+          <th>Kafka event</th>
+        </tr>
+      </thead>
+      <tbody id="log-body">
+        <tr><td colspan="6" style="text-align:center;color:var(--text-hint);padding:24px">No stock updates yet. Update a product to see activity here.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:3003';
+let currentProductId = '';
+let currentStock = 0;
+const activityLog = [];
+
+async function loadInventory() {
+  try {
+    const res = await fetch(`${API}/inventory`);
+    const data = await res.json();
+    renderStockCards(data.products);
+  } catch(e) {
+    document.getElementById('stock-grid').innerHTML =
+      '<p style="color:var(--text-hint);font-size:13px">Could not connect to Inventory API.</p>';
+  }
+}
+
+function renderStockCards(products) {
+  const grid = document.getElementById('stock-grid');
+  grid.innerHTML = products.map(p => {
+    const isOut = p.available === 0;
+    const dotClass = isOut ? 'dot-out' : 'dot-in';
+    const countClass = isOut ? 'out' : 'in';
+    const cardClass = isOut ? 'stock-card out-of-stock' : 'stock-card';
+    return `<div class="${cardClass}">
+      <div class="stock-card-header">
+        <span class="stock-name">${p.name}</span>
+        <span class="stock-status-dot ${dotClass}"></span>
+      </div>
+      <div class="stock-count ${countClass}">${p.available}</div>
+      <div class="stock-label">${isOut ? 'out of stock' : 'units available'}</div>
+      <button class="update-btn" onclick="openUpdate('${p.productId}','${p.name}',${p.stock})">Update stock</button>
+    </div>`;
+  }).join('');
+}
+
+function openUpdate(productId, name, stock) {
+  currentProductId = productId;
+  currentStock = stock;
+  document.getElementById('update-product-label').textContent = name;
+  document.getElementById('u-product').value = name;
+  document.getElementById('u-current').value = stock;
+  document.getElementById('u-new').value = '';
+  document.getElementById('u-reason').value = 'restock';
+  document.getElementById('update-success').classList.remove('show');
+  const panel = document.getElementById('update-panel');
+  panel.classList.add('show');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeUpdate() {
+  document.getElementById('update-panel').classList.remove('show');
+  currentProductId = '';
+}
+
+async function submitUpdate() {
+  const newStock = parseInt(document.getElementById('u-new').value);
+  const reason   = document.getElementById('u-reason').value;
+
+  if (isNaN(newStock) || newStock < 0) {
+    alert('Please enter a valid stock count.');
+    return;
+  }
+
+  const btn = document.getElementById('u-submit');
+  btn.disabled = true;
+  btn.textContent = 'Updating...';
+
+  try {
+    const res = await fetch(`${API}/inventory/${currentProductId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_stock: newStock, reason })
+    });
+    const data = await res.json();
+
+    const change = newStock - currentStock;
+    activityLog.unshift({
+      product: document.getElementById('u-product').value,
+      previous: currentStock,
+      newStock,
+      change,
+      reason,
+      eventId: data.kafka_event
+    });
+    renderLog();
+
+    const succ = document.getElementById('update-success');
+    succ.textContent = `Stock updated. Kafka event published to inventory.updated. Sales API will reflect new count shortly.`;
+    succ.classList.add('show');
+
+    await loadInventory();
+    setTimeout(closeUpdate, 2500);
+
+  } catch(e) {
+    alert('Could not update stock. Please try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Update stock';
+  }
+}
+
+function renderLog() {
+  const tbody = document.getElementById('log-body');
+  if (!activityLog.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-hint);padding:24px">No stock updates yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = activityLog.map(entry => {
+    const change = entry.change;
+    let pillClass = 'change-zero';
+    let changeStr = '0';
+    if (change > 0) { pillClass = 'change-up'; changeStr = `+${change}`; }
+    else if (change < 0) { pillClass = 'change-down'; changeStr = `${change}`; }
+    return `<tr>
+      <td style="font-weight:500">${entry.product}</td>
+      <td class="mono muted">${entry.previous}</td>
+      <td class="mono">${entry.newStock}</td>
+      <td><span class="change-pill ${pillClass}">${changeStr}</span></td>
+      <td><span class="reason-tag">${entry.reason}</span></td>
+      <td class="mono muted" style="font-size:11px">${entry.eventId ? entry.eventId.slice(0,8) + '...' : 'N/A'}</td>
+    </tr>`;
+  }).join('');
+}
+
+loadInventory();
+</script>
+</body>
+</html>
