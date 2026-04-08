@@ -8,6 +8,7 @@ from typing import Optional
 
 from dynamodb import get_all_products, get_product, update_stock, add_product
 from kafka_producer import publish_inventory_updated
+from kafka_consumer import start_consumer
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -33,6 +34,18 @@ app.add_middleware(
 # Scenario 1 + 2: small, medium, large boxes only
 # Scenario 3:     XL boxes added
 SCENARIO = int(os.getenv("SCENARIO", "1"))
+
+
+# ── Start Kafka consumer on app startup ──────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    """
+    Starts the Kafka consumer background thread when FastAPI starts.
+    The consumer listens for orders.created events and automatically
+    decrements stock when orders are placed.
+    """
+    start_consumer()
+    print(f"[Startup] Inventory API running — Scenario {SCENARIO}")
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
