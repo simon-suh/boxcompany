@@ -341,6 +341,7 @@
 const API = 'http://localhost:3002';
 let currentOrderId = '';
 let orders = [];
+let refreshInterval;
 
 async function loadOrders() {
   try {
@@ -460,9 +461,17 @@ async function submitTracking() {
 
 function toggleReport() {
   const panel = document.getElementById('report-panel');
+  const isOpening = !panel.classList.contains('show');
   panel.classList.toggle('show');
   document.getElementById('report-sent').classList.remove('show');
-  if (panel.classList.contains('show')) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (isOpening) {
+    // Pause auto-refresh while report panel is open
+    clearInterval(refreshInterval);
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } else {
+    // Resume auto-refresh when panel closes
+    refreshInterval = setInterval(loadOrders, 15000);
+  }
 }
 
 async function submitReport() {
@@ -486,18 +495,38 @@ async function submitReport() {
       body: JSON.stringify({ order_number: orderNumber, issue_type: type, description: desc, notify_teams: notifyTeams })
     });
     const data = await res.json();
+
+    // Update the order status locally so the issues counter updates immediately
+    if (selectedOrder) {
+      selectedOrder.status = 'issue';
+    }
+
     const sent = document.getElementById('report-sent');
     sent.textContent = `Report submitted. Kafka event published to errors.reported. Notifying: ${notifyTeams.join(', ')}.`;
     sent.classList.add('show');
+    
+    // Reload orders to refresh the table and metrics
     loadOrders();
+
+    // Close the panel and clear the form after a short delay
+    setTimeout(() => {
+      toggleReport(); // Close the panel (this will also resume auto-refresh)
+      // Clear form fields
+      document.getElementById('r-order').value = '';
+      document.getElementById('r-type').value = '';
+      document.getElementById('r-desc').value = '';
+      document.getElementById('report-sent').classList.remove('show');
+    }, 2000);
+
   } catch(e) {
     alert('Could not submit report. Please try again.');
   }
 }
 
+// Initialize
 loadOrders();
-setInterval(loadOrders, 15000);
+refreshInterval = setInterval(loadOrders, 15000);
+
 </script>
 </body>
 </html>
-
