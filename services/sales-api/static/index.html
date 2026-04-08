@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BoxCo — Sales portal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --border: #e8e8e4;
+    --border-strong: #d0d0ca;
+    --text: #1a1a18;
+    --text-muted: #6b6b65;
+    --text-hint: #9e9e96;
+    --accent: #1a1a18;
+    --accent-hover: #333330;
+    --success-bg: #f0faf4;
+    --success-border: #a3d9b5;
+    --success-text: #1a5c35;
+    --error-bg: #fdf2f2;
+    --error-border: #f0b8b8;
+    --error-text: #7c1c1c;
+    --warn-bg: #fffbf0;
+    --warn-border: #f0d890;
+    --warn-text: #7c5c00;
+    --out-stock: #e84040;
+    --in-stock: #2a9d5c;
+    --radius: 6px;
+    --radius-lg: 10px;
+  }
+
+  html { font-size: 15px; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ── Top bar ── */
+  .topbar {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 52px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; letter-spacing: 0.04em; }
+  .scenario-tag {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    padding: 3px 10px; border-radius: 20px;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  /* ── Layout ── */
+  .page { max-width: 860px; margin: 0 auto; padding: 40px 32px 80px; }
+  .page-title { font-size: 26px; font-weight: 300; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .page-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 32px; }
+
+  /* ── Stock bar ── */
+  .stock-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 32px; }
+  .stock-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--surface);
+    font-size: 13px;
+  }
+  .stock-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .stock-pill .label { font-weight: 500; color: var(--text); }
+  .stock-pill .count { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-muted); }
+  .dot-in { background: var(--in-stock); }
+  .dot-out { background: var(--out-stock); }
+
+  /* ── Section heading ── */
+  .section-label {
+    font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-hint);
+    margin-bottom: 12px; margin-top: 28px;
+  }
+
+  /* ── Form card ── */
+  .card {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 28px;
+    margin-bottom: 20px;
+  }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size: 12px; font-weight: 500; color: var(--text-muted); letter-spacing: 0.02em; }
+  .field input, .field select {
+    height: 38px; padding: 0 12px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font-size: 14px; font-family: 'DM Sans', sans-serif;
+    color: var(--text); background: var(--bg); outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field input.err, .field select.err { border-color: var(--out-stock); background: var(--error-bg); }
+  .field-hint { font-size: 11px; color: var(--error-text); display: none; }
+  .field-hint.show { display: block; }
+
+  /* ── Order items table ── */
+  .items-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .items-table th {
+    font-size: 11px; font-weight: 500; color: var(--text-hint);
+    text-align: left; padding: 0 10px 10px; letter-spacing: 0.06em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .items-table td { padding: 12px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .items-table tr:last-child td { border: none; }
+
+  .size-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 500;
+  }
+  .size-tag .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  .avail { font-family: 'DM Mono', monospace; font-size: 12px; }
+  .avail.in { color: var(--in-stock); }
+  .avail.out { color: var(--out-stock); font-weight: 500; }
+
+  .qty-wrap { display: flex; flex-direction: column; gap: 4px; }
+  .qty-input {
+    width: 80px; height: 34px; padding: 0 10px; text-align: center;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font-size: 14px; font-family: 'DM Mono', monospace;
+    color: var(--text); background: var(--bg); outline: none;
+    transition: border-color 0.15s;
+  }
+  .qty-input:focus { border-color: var(--accent); }
+  .qty-input.err { border-color: var(--out-stock); background: var(--error-bg); }
+  .qty-err { font-size: 11px; color: var(--error-text); display: none; }
+  .qty-err.show { display: block; }
+
+  /* ── Medium box warning ── */
+  .medium-warn {
+    margin-top: 14px; padding: 12px 14px;
+    background: var(--warn-bg); border: 1px solid var(--warn-border);
+    border-radius: var(--radius); font-size: 13px; color: var(--warn-text);
+    display: none;
+  }
+  .medium-warn.show { display: block; }
+  .medium-warn strong { font-weight: 500; }
+
+  /* ── Payment options ── */
+  .pay-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pay-opt {
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    padding: 11px 14px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .pay-opt:hover { border-color: var(--accent); }
+  .pay-opt.selected { border-color: var(--accent); background: var(--surface); }
+  .pay-opt input[type=radio] { accent-color: var(--accent); width: 15px; height: 15px; }
+  .pay-opt span { font-size: 13px; }
+
+  /* ── Form error ── */
+  .form-err {
+    margin-top: 14px; padding: 11px 14px;
+    background: var(--error-bg); border: 1px solid var(--error-border);
+    border-radius: var(--radius); font-size: 13px; color: var(--error-text);
+    display: none;
+  }
+  .form-err.show { display: block; }
+
+  /* ── Submit button ── */
+  .submit-btn {
+    margin-top: 24px; width: 100%; height: 44px;
+    background: var(--accent); color: #fff; border: none;
+    border-radius: var(--radius); font-size: 14px; font-weight: 500;
+    font-family: 'DM Sans', sans-serif; cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    letter-spacing: 0.01em;
+  }
+  .submit-btn:hover { background: var(--accent-hover); }
+  .submit-btn:active { transform: scale(0.99); }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Confirmation ── */
+  .confirm-card {
+    background: var(--success-bg); border: 1px solid var(--success-border);
+    border-radius: var(--radius-lg); padding: 26px;
+    display: none; margin-bottom: 20px;
+  }
+  .confirm-card.show { display: block; }
+  .confirm-title { font-size: 15px; font-weight: 500; color: var(--success-text); margin-bottom: 16px; }
+  .confirm-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--success-border);
+  }
+  .confirm-row:last-of-type { border: none; }
+  .confirm-row .k { color: var(--success-text); }
+  .confirm-row .v { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--success-text); font-weight: 500; }
+  .notify-note { margin-top: 14px; font-size: 12px; color: var(--success-text); padding-top: 12px; border-top: 1px solid var(--success-border); }
+
+  /* ── Orders list ── */
+  .orders-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .orders-table th {
+    font-size: 11px; font-weight: 500; color: var(--text-hint);
+    text-align: left; padding: 0 12px 10px; letter-spacing: 0.06em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .orders-table td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+  .orders-table tr:last-child td { border: none; }
+  .orders-table tr:hover td { background: var(--surface); }
+  .status-pill {
+    display: inline-block; font-size: 11px; font-weight: 500;
+    padding: 2px 8px; border-radius: 20px;
+  }
+  .status-pending { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border); }
+
+  @media (max-width: 600px) {
+    .form-grid, .pay-grid { grid-template-columns: 1fr; }
+    .page { padding: 24px 16px 60px; }
+    .topbar { padding: 0 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">BOXCO / Sales portal</span>
+  <span class="scenario-tag">Scenario 1</span>
+</div>
+
+<div class="page">
+  <h1 class="page-title">New order</h1>
+  <p class="page-sub">Complete the form to process a customer order. Multiple box sizes can be ordered together.</p>
+
+  <!-- Stock bar -->
+  <div class="stock-bar" id="stock-bar">
+    <div class="stock-pill">
+      <span class="stock-dot dot-in"></span>
+      <span class="label">Small box</span>
+      <span class="count" id="count-small">...</span>
+    </div>
+    <div class="stock-pill">
+      <span class="stock-dot dot-out"></span>
+      <span class="label">Medium box</span>
+      <span class="count" id="count-medium">0 units</span>
+    </div>
+    <div class="stock-pill">
+      <span class="stock-dot dot-in"></span>
+      <span class="label">Large box</span>
+      <span class="count" id="count-large">...</span>
+    </div>
+  </div>
+
+  <!-- Confirmation panel -->
+  <div class="confirm-card" id="confirm-card">
+    <div class="confirm-title">Order confirmed</div>
+    <div class="confirm-row"><span class="k">Order number</span><span class="v" id="c-order"></span></div>
+    <div class="confirm-row"><span class="k">Customer</span><span class="v" id="c-name"></span></div>
+    <div id="c-items"></div>
+    <div class="confirm-row"><span class="k">Payment</span><span class="v" id="c-pay"></span></div>
+    <div class="confirm-row"><span class="k">Event ID</span><span class="v" id="c-event"></span></div>
+    <div class="notify-note" id="c-notify"></div>
+  </div>
+
+  <!-- Order form -->
+  <div class="card">
+    <div class="section-label">Customer details</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Customer name</label>
+        <input type="text" id="f-name" placeholder="Full name"/>
+      </div>
+      <div class="field">
+        <label>Phone number</label>
+        <input type="tel" id="f-phone" placeholder="+1 (555) 000-0000"/>
+      </div>
+      <div class="field full">
+        <label>Email address</label>
+        <input type="email" id="f-email" placeholder="customer@email.com"/>
+      </div>
+    </div>
+
+    <div class="section-label" style="margin-top:24px">Order items</div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Availability</th>
+          <th>Quantity</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="size-tag"><span class="dot dot-in"></span>Small box</span></td>
+          <td><span class="avail in" id="avail-small">500 units</span></td>
+          <td>
+            <div class="qty-wrap">
+              <input class="qty-input" id="qty-small" type="number" min="0" value="0" oninput="validateQty('small')"/>
+              <span class="qty-err" id="err-small"></span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td><span class="size-tag"><span class="dot dot-out"></span>Medium box</span></td>
+          <td><span class="avail out">0 units — out of stock</span></td>
+          <td>
+            <div class="qty-wrap">
+              <input class="qty-input" id="qty-medium" type="number" min="0" value="0" oninput="validateQty('medium')"/>
+              <span class="qty-err" id="err-medium"></span>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td><span class="size-tag"><span class="dot dot-in"></span>Large box</span></td>
+          <td><span class="avail in" id="avail-large">300 units</span></td>
+          <td>
+            <div class="qty-wrap">
+              <input class="qty-input" id="qty-large" type="number" min="0" value="0" oninput="validateQty('large')"/>
+              <span class="qty-err" id="err-large"></span>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="medium-warn" id="medium-warn">
+      <strong>Note:</strong> Medium boxes are currently out of stock. In Scenario 1 this order will still be processed — this is the known bug that gets fixed in Scenario 2.
+    </div>
+
+    <div class="section-label" style="margin-top:24px">Payment method</div>
+    <div class="pay-grid">
+      <div class="pay-opt" id="pay-card" onclick="selectPay('credit_card')">
+        <input type="radio" name="pay" id="r-card"/><span>Credit / debit card</span>
+      </div>
+      <div class="pay-opt" id="pay-invoice" onclick="selectPay('invoice_net30')">
+        <input type="radio" name="pay" id="r-invoice"/><span>Invoice / net 30</span>
+      </div>
+      <div class="pay-opt" id="pay-ach" onclick="selectPay('ach_transfer')">
+        <input type="radio" name="pay" id="r-ach"/><span>ACH bank transfer</span>
+      </div>
+      <div class="pay-opt" id="pay-check" onclick="selectPay('check')">
+        <input type="radio" name="pay" id="r-check"/><span>Check</span>
+      </div>
+    </div>
+
+    <div class="form-err" id="form-err"></div>
+    <button class="submit-btn" id="submit-btn" onclick="submitOrder()">Process order</button>
+  </div>
+
+  <!-- Recent orders -->
+  <div class="section-label">Recent orders</div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table class="orders-table">
+      <thead>
+        <tr>
+          <th>Order</th>
+          <th>Customer</th>
+          <th>Items</th>
+          <th>Payment</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="orders-body">
+        <tr><td colspan="5" style="text-align:center;color:var(--text-hint);padding:20px">Loading orders...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:3001';
+let inventory = {};
+let selectedPay = '';
+
+async function loadInventory() {
+  try {
+    const res = await fetch(`${API}/inventory`);
+    const data = await res.json();
+    data.products.forEach(p => {
+      inventory[p.productId] = p.available;
+    });
+    const s = inventory['small-box'] ?? 500;
+    const l = inventory['large-box'] ?? 300;
+    document.getElementById('count-small').textContent = `${s} units`;
+    document.getElementById('count-large').textContent = `${l} units`;
+    document.getElementById('avail-small').textContent = `${s} units`;
+    document.getElementById('avail-large').textContent = `${l} units`;
+  } catch(e) {
+    console.error('Could not load inventory:', e);
+  }
+}
+
+async function loadOrders() {
+  try {
+    const res = await fetch(`${API}/orders`);
+    const orders = await res.json();
+    const tbody = document.getElementById('orders-body');
+    if (!orders.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-hint);padding:20px">No orders yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = orders.map(o => {
+      const items = o.items.map(i => `${i.product_name} x${i.quantity}`).join(', ');
+      return `<tr>
+        <td style="font-family:'DM Mono',monospace;font-size:12px">${o.order_number}</td>
+        <td>${o.customer_name}</td>
+        <td style="color:var(--text-muted)">${items}</td>
+        <td style="color:var(--text-muted)">${o.payment_method}</td>
+        <td><span class="status-pill status-pending">${o.status}</span></td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    console.error('Could not load orders:', e);
+  }
+}
+
+function validateQty(size) {
+  const input = document.getElementById(`qty-${size}`);
+  const errEl = document.getElementById(`err-${size}`);
+  const val = parseInt(input.value) || 0;
+
+  if (size === 'medium') {
+    document.getElementById('medium-warn').classList.toggle('show', val > 0);
+    input.classList.remove('err');
+    errEl.classList.remove('show');
+    return true;
+  }
+
+  const avail = inventory[`${size}-box`] ?? (size === 'small' ? 500 : 300);
+  if (val > avail) {
+    input.classList.add('err');
+    errEl.textContent = `Only ${avail} units available`;
+    errEl.classList.add('show');
+    return false;
+  }
+  input.classList.remove('err');
+  errEl.classList.remove('show');
+  return true;
+}
+
+function selectPay(val) {
+  selectedPay = val;
+  ['credit_card','invoice_net30','ach_transfer','check'].forEach(p => {
+    const id = {credit_card:'card',invoice_net30:'invoice',ach_transfer:'ach',check:'check'}[p];
+    document.getElementById(`pay-${id}`).classList.toggle('selected', p === val);
+    document.getElementById(`r-${id}`).checked = (p === val);
+  });
+}
+
+async function submitOrder() {
+  const name  = document.getElementById('f-name').value.trim();
+  const phone = document.getElementById('f-phone').value.trim();
+  const email = document.getElementById('f-email').value.trim();
+  const qS = parseInt(document.getElementById('qty-small').value) || 0;
+  const qM = parseInt(document.getElementById('qty-medium').value) || 0;
+  const qL = parseInt(document.getElementById('qty-large').value) || 0;
+  const errEl = document.getElementById('form-err');
+
+  if (!name) { showErr('Please enter a customer name.'); return; }
+  if (qS === 0 && qM === 0 && qL === 0) { showErr('Please enter a quantity for at least one product.'); return; }
+  if (!validateQty('small') || !validateQty('large')) { showErr('One or more quantities exceed available stock.'); return; }
+  if (!selectedPay) { showErr('Please select a payment method.'); return; }
+  errEl.classList.remove('show');
+
+  const items = [];
+  if (qS > 0) items.push({ product_id: 'small-box', product_name: 'Small box', quantity: qS });
+  if (qM > 0) items.push({ product_id: 'medium-box', product_name: 'Medium box', quantity: qM });
+  if (qL > 0) items.push({ product_id: 'large-box', product_name: 'Large box', quantity: qL });
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+
+  try {
+    const res = await fetch(`${API}/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer_name: name,
+        customer_email: email || null,
+        customer_phone: phone || null,
+        items,
+        payment_method: selectedPay,
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      const msg = data.detail?.message || data.detail || 'Order failed. Please try again.';
+      showErr(msg);
+      return;
+    }
+
+    const payLabels = { credit_card: 'Credit / debit card', invoice_net30: 'Invoice / net 30', ach_transfer: 'ACH bank transfer', check: 'Check' };
+    document.getElementById('c-order').textContent = data.order_number;
+    document.getElementById('c-name').textContent = data.customer;
+    document.getElementById('c-pay').textContent = payLabels[selectedPay];
+    document.getElementById('c-event').textContent = data.kafka_event;
+
+    const itemsHTML = data.items.map(i =>
+      `<div class="confirm-row"><span class="k">${i.product_name}</span><span class="v">${i.quantity} unit${i.quantity > 1 ? 's' : ''}</span></div>`
+    ).join('');
+    document.getElementById('c-items').innerHTML = itemsHTML;
+
+    const parts = [];
+    if (email) parts.push(`Confirmation email sent to ${email}`);
+    if (phone) parts.push(`SMS sent to ${phone}`);
+    document.getElementById('c-notify').textContent = parts.length ? parts.join(' · ') : 'No contact info provided.';
+
+    document.getElementById('confirm-card').classList.add('show');
+    document.getElementById('confirm-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    document.getElementById('f-name').value = '';
+    document.getElementById('f-phone').value = '';
+    document.getElementById('f-email').value = '';
+    document.getElementById('qty-small').value = 0;
+    document.getElementById('qty-medium').value = 0;
+    document.getElementById('qty-large').value = 0;
+    document.getElementById('medium-warn').classList.remove('show');
+    selectedPay = '';
+    ['card','invoice','ach','check'].forEach(p => {
+      document.getElementById(`pay-${p}`).classList.remove('selected');
+      document.getElementById(`r-${p}`).checked = false;
+    });
+
+    loadOrders();
+    loadInventory();
+
+  } catch(e) {
+    showErr('Could not connect to the Sales API. Make sure the server is running.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Process order';
+  }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('form-err');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+loadInventory();
+loadOrders();
+</script>
+</body>
+</html>
+

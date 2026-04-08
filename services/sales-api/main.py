@@ -5,6 +5,8 @@ import httpx
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -17,6 +19,12 @@ app = FastAPI(
     description = "Handles order submission for the Sales team.",
     version     = "1.0.0",
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+def serve_frontend():
+    return FileResponse("static/index.html")
 
 app.add_middleware(
     CORSMiddleware,
