@@ -179,6 +179,28 @@ def report_error(request: ErrorReportRequest):
     """
     report_id = str(uuid.uuid4())
 
+    # If an order number is provided, update its status to 'issue'
+    if request.order_number:
+        from dynamodb import dynamodb
+        try:
+            orders_table = dynamodb.Table("shipments")
+            # Find the order by orderNumber
+            response = orders_table.scan(
+                FilterExpression="orderNumber = :order_num",
+                ExpressionAttributeValues={":order_num": request.order_number}
+            )
+            if response.get("Items"):
+                order = response["Items"][0]
+                # Update the order status to 'issue'
+                orders_table.update_item(
+                    Key={"orderId": order["orderId"]},
+                    UpdateExpression="SET #status = :status",
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={":status": "issue"}
+                )
+        except Exception as e:
+            print(f"[Error] Could not update order status: {e}")
+
     event = publish_error_reported({
         "id":           report_id,
         "order_number": request.order_number,
