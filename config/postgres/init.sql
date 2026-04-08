@@ -46,24 +46,5 @@ CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_error_reports_order_number ON error_reports(order_number);
 
-INSERT INTO customers (id, name, email, phone) VALUES
-  ('a1000000-0000-0000-0000-000000000001', 'Sarah Mitchell', 'sarah.mitchell@email.com', '+15550001001'),
-  ('a1000000-0000-0000-0000-000000000002', 'James Okafor',   'james.okafor@email.com',   '+15550001002'),
-  ('a1000000-0000-0000-0000-000000000003', 'Linda Chow',     'linda.chow@email.com',     '+15550001003'),
-  ('a1000000-0000-0000-0000-000000000004', 'Marcus Reed',    'marcus.reed@email.com',    '+15550001004')
-ON CONFLICT DO NOTHING;
-
-INSERT INTO orders (id, order_number, customer_id, payment_method, status) VALUES
-  ('b1000000-0000-0000-0000-000000000001', 'ORD-10421', 'a1000000-0000-0000-0000-000000000001', 'credit_card',  'pending'),
-  ('b1000000-0000-0000-0000-000000000002', 'ORD-10388', 'a1000000-0000-0000-0000-000000000002', 'invoice_net30','pending'),
-  ('b1000000-0000-0000-0000-000000000003', 'ORD-10374', 'a1000000-0000-0000-0000-000000000003', 'ach_transfer', 'pending'),
-  ('b1000000-0000-0000-0000-000000000004', 'ORD-10361', 'a1000000-0000-0000-0000-000000000004', 'credit_card',  'pending')
-ON CONFLICT DO NOTHING;
-
-INSERT INTO order_items (id, order_id, product_id, product_name, quantity) VALUES
-  ('c1000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-000000000001', 'medium-box', 'Medium box', 10),
-  ('c1000000-0000-0000-0000-000000000002', 'b1000000-0000-0000-0000-000000000002', 'small-box',  'Small box',  50),
-  ('c1000000-0000-0000-0000-000000000003', 'b1000000-0000-0000-0000-000000000002', 'large-box',  'Large box',  20),
-  ('c1000000-0000-0000-0000-000000000004', 'b1000000-0000-0000-0000-000000000003', 'medium-box', 'Medium box', 5),
-  ('c1000000-0000-0000-0000-000000000005', 'b1000000-0000-0000-0000-000000000004', 'small-box',  'Small box',  100)
-ON CONFLICT DO NOTHING;
+-- No seed data — completely fresh start
+-- All customers and orders will be created through the Sales frontend
