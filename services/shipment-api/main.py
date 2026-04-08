@@ -3,6 +3,8 @@ import uuid
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 
@@ -15,6 +17,12 @@ app = FastAPI(
     description = "Manages order fulfillment and tracking for the Shipment team.",
     version     = "1.0.0",
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+def serve_frontend():
+    return FileResponse("static/index.html")
 
 app.add_middleware(
     CORSMiddleware,

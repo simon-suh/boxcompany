@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BoxCo — Shipment portal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --surface: #f7f7f5;
+    --border: #e8e8e4;
+    --border-strong: #d0d0ca;
+    --text: #1a1a18;
+    --text-muted: #6b6b65;
+    --text-hint: #9e9e96;
+    --accent: #1a1a18;
+    --success-bg: #f0faf4;
+    --success-border: #a3d9b5;
+    --success-text: #1a5c35;
+    --error-bg: #fdf2f2;
+    --error-border: #f0b8b8;
+    --error-text: #7c1c1c;
+    --warn-bg: #fffbf0;
+    --warn-border: #f0d890;
+    --warn-text: #7c5c00;
+    --radius: 6px;
+    --radius-lg: 10px;
+  }
+
+  html { font-size: 15px; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--bg); border-bottom: 1px solid var(--border);
+    padding: 0 32px; height: 52px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; letter-spacing: 0.04em; }
+  .scenario-tag {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    padding: 3px 10px; border-radius: 20px;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+
+  .page { max-width: 1000px; margin: 0 auto; padding: 40px 32px 80px; }
+  .page-title { font-size: 26px; font-weight: 300; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .page-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 32px; }
+
+  /* Metrics */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 32px; }
+  .metric { background: var(--surface); border-radius: var(--radius-lg); padding: 16px 18px; }
+  .metric .mlabel { font-size: 11px; color: var(--text-hint); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
+  .metric .mval { font-size: 24px; font-weight: 300; color: var(--text); font-family: 'DM Mono', monospace; }
+  .metric .msub { font-size: 11px; color: var(--text-hint); margin-top: 4px; }
+
+  .section-label {
+    font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-hint);
+    margin-bottom: 12px;
+  }
+
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 20px; overflow: hidden; }
+  .card-inner { padding: 24px; }
+
+  /* Orders table */
+  .orders-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .orders-table th {
+    font-size: 11px; font-weight: 500; color: var(--text-hint);
+    text-align: left; padding: 12px 14px; letter-spacing: 0.06em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .orders-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .orders-table tr:last-child td { border: none; }
+  .orders-table tr:hover td { background: var(--surface); }
+
+  .mono { font-family: 'DM Mono', monospace; font-size: 12px; }
+  .muted { color: var(--text-muted); }
+
+  .status-pill { display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 20px; }
+  .status-pending { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border); }
+  .status-shipped { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+  .status-issue { background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-border); }
+
+  .oos-tag {
+    display: inline-block; font-size: 10px; font-weight: 500;
+    padding: 1px 6px; border-radius: 4px; margin-left: 6px;
+    background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-border);
+  }
+
+  .track-btn {
+    font-size: 12px; padding: 5px 12px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: var(--bg); color: var(--text); cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .track-btn:hover { background: var(--surface); border-color: var(--accent); }
+
+  .report-btn {
+    font-size: 12px; padding: 6px 14px;
+    border: 1px solid var(--error-border); border-radius: var(--radius);
+    background: var(--error-bg); color: var(--error-text); cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-weight: 500;
+    transition: background 0.12s;
+  }
+  .report-btn:hover { background: var(--error-border); }
+
+  /* Tracking form */
+  .tracking-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 24px; margin-bottom: 20px;
+    display: none;
+  }
+  .tracking-panel.show { display: block; }
+  .tracking-title { font-size: 14px; font-weight: 500; margin-bottom: 16px; }
+  .tracking-title span { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text-muted); }
+
+  .tform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+  .field input, .field select {
+    height: 36px; padding: 0 11px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font-size: 13px; font-family: 'DM Sans', sans-serif;
+    color: var(--text); background: var(--bg); outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field input[readonly] { background: var(--surface); color: var(--text-muted); }
+
+  .tform-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .btn-primary {
+    height: 38px; padding: 0 20px;
+    background: var(--accent); color: #fff; border: none;
+    border-radius: var(--radius); font-size: 13px; font-weight: 500;
+    font-family: 'DM Sans', sans-serif; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-cancel {
+    height: 38px; padding: 0 16px;
+    background: var(--bg); color: var(--text-muted);
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer;
+  }
+  .btn-cancel:hover { background: var(--surface); }
+
+  .track-success {
+    margin-top: 14px; padding: 11px 14px;
+    background: var(--success-bg); border: 1px solid var(--success-border);
+    border-radius: var(--radius); font-size: 13px; color: var(--success-text);
+    display: none;
+  }
+  .track-success.show { display: block; }
+
+  /* Report panel */
+  .report-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 24px; margin-bottom: 20px;
+    display: none;
+  }
+  .report-panel.show { display: block; }
+  .report-panel h3 { font-size: 14px; font-weight: 500; margin-bottom: 16px; }
+  .rfield { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .rfield label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+  .rfield select, .rfield textarea, .rfield input {
+    padding: 8px 11px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius); font-size: 13px; font-family: 'DM Sans', sans-serif;
+    color: var(--text); background: var(--bg); outline: none;
+  }
+  .rfield textarea { height: 72px; resize: none; }
+  .check-row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .check-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+  .report-sent {
+    margin-top: 12px; padding: 11px 14px;
+    background: var(--success-bg); border: 1px solid var(--success-border);
+    border-radius: var(--radius); font-size: 13px; color: var(--success-text);
+    display: none;
+  }
+  .report-sent.show { display: block; }
+
+  .refresh-btn {
+    font-size: 12px; padding: 5px 12px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg); color: var(--text-muted); cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .refresh-btn:hover { background: var(--surface); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">BOXCO / Shipment portal</span>
+  <span class="scenario-tag">Scenario 1</span>
+</div>
+
+<div class="page">
+  <h1 class="page-title">Shipment dashboard</h1>
+  <p class="page-sub">Incoming orders from the sales team. Upload tracking info once an order ships.</p>
+
+  <!-- Metrics -->
+  <div class="metrics">
+    <div class="metric">
+      <div class="mlabel">Pending</div>
+      <div class="mval" id="m-pending">0</div>
+      <div class="msub">awaiting fulfillment</div>
+    </div>
+    <div class="metric">
+      <div class="mlabel">Shipped</div>
+      <div class="mval" id="m-shipped">0</div>
+      <div class="msub">tracking uploaded</div>
+    </div>
+    <div class="metric">
+      <div class="mlabel">Issues</div>
+      <div class="mval" id="m-issues">0</div>
+      <div class="msub">open reports</div>
+    </div>
+    <div class="metric">
+      <div class="mlabel">Total</div>
+      <div class="mval" id="m-total">0</div>
+      <div class="msub">orders received</div>
+    </div>
+  </div>
+
+  <!-- Tracking form -->
+  <div class="tracking-panel" id="tracking-panel">
+    <div class="tracking-title">Upload tracking info — <span id="track-order-label"></span></div>
+    <div class="tform-grid">
+      <div class="field">
+        <label>Order number</label>
+        <input type="text" id="t-order-num" readonly/>
+      </div>
+      <div class="field">
+        <label>Carrier</label>
+        <select id="t-carrier">
+          <option value="">Select carrier</option>
+          <option>UPS</option>
+          <option>FedEx</option>
+          <option>USPS</option>
+          <option>DHL</option>
+        </select>
+      </div>
+      <div class="field full">
+        <label>Tracking number</label>
+        <input type="text" id="t-tracking" placeholder="Enter carrier tracking number"/>
+      </div>
+      <div class="field">
+        <label>Ship date</label>
+        <input type="date" id="t-date"/>
+      </div>
+      <div class="field">
+        <label>Ship time</label>
+        <input type="time" id="t-time"/>
+      </div>
+    </div>
+    <div class="tform-actions">
+      <button class="btn-primary" id="t-submit" onclick="submitTracking()">Submit tracking</button>
+      <button class="btn-cancel" onclick="closeTracking()">Cancel</button>
+    </div>
+    <div class="track-success" id="track-success"></div>
+  </div>
+
+  <!-- Report panel -->
+  <div class="report-panel" id="report-panel">
+    <h3>Report an issue</h3>
+    <div class="rfield">
+      <label>Related order number</label>
+      <select id="r-order"></select>
+    </div>
+    <div class="rfield">
+      <label>Issue type</label>
+      <select id="r-type">
+        <option value="">Select issue type</option>
+        <option value="out-of-stock">Out of stock — cannot fulfill</option>
+        <option value="wrong-item">Wrong item ordered</option>
+        <option value="wrong-tracking">Incorrect tracking info</option>
+        <option value="address-issue">Address issue</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="rfield">
+      <label>Description</label>
+      <textarea id="r-desc" placeholder="Describe the issue in detail..."></textarea>
+    </div>
+    <div class="rfield">
+      <label>Notify teams</label>
+      <div class="check-row">
+        <label><input type="checkbox" id="n-sales" checked/> Sales team</label>
+        <label><input type="checkbox" id="n-inventory" checked/> Inventory team</label>
+        <label><input type="checkbox" id="n-dev"/> Dev team</label>
+      </div>
+    </div>
+    <div class="tform-actions">
+      <button class="btn-primary" onclick="submitReport()">Send report</button>
+      <button class="btn-cancel" onclick="toggleReport()">Cancel</button>
+    </div>
+    <div class="report-sent" id="report-sent"></div>
+  </div>
+
+  <!-- Orders -->
+  <div class="section-header">
+    <span class="section-label">Incoming orders</span>
+    <div style="display:flex;gap:8px">
+      <button class="refresh-btn" onclick="loadOrders()">Refresh</button>
+      <button class="report-btn" onclick="toggleReport()">Report an issue</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <table class="orders-table">
+      <thead>
+        <tr>
+          <th>Order</th>
+          <th>Customer</th>
+          <th>Items</th>
+          <th>Payment</th>
+          <th>Date</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="orders-body">
+        <tr><td colspan="7" style="text-align:center;color:var(--text-hint);padding:24px">Loading orders...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:3002';
+let currentOrderId = '';
+let orders = [];
+
+async function loadOrders() {
+  try {
+    const res = await fetch(`${API}/orders`);
+    const data = await res.json();
+    orders = data.orders || [];
+
+    const pending = orders.filter(o => o.status === 'pending').length;
+    const shipped = orders.filter(o => o.status === 'shipped').length;
+    const issues  = orders.filter(o => o.status === 'issue').length;
+    document.getElementById('m-pending').textContent = pending;
+    document.getElementById('m-shipped').textContent = shipped;
+    document.getElementById('m-issues').textContent = issues;
+    document.getElementById('m-total').textContent = orders.length;
+
+    const tbody = document.getElementById('orders-body');
+    if (!orders.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-hint);padding:24px">No orders yet — submit one via the Sales portal</td></tr>';
+      return;
+    }
+
+    const rOrderSel = document.getElementById('r-order');
+    rOrderSel.innerHTML = '<option value="">Select order</option>';
+
+    tbody.innerHTML = orders.map(o => {
+      let items;
+      try { items = typeof o.items === 'string' ? JSON.parse(o.items) : o.items; }
+      catch(e) { items = []; }
+      const itemStr = items.map(i => `${i.productName || i.product_name} x${i.quantity}`).join(', ');
+      const hasOos = items.some(i => (i.productId || i.product_id) === 'medium-box');
+      const oosTag = hasOos ? '<span class="oos-tag">OOS item</span>' : '';
+
+      let pill = '';
+      if (o.status === 'shipped') pill = '<span class="status-pill status-shipped">Shipped</span>';
+      else if (o.status === 'issue') pill = '<span class="status-pill status-issue">Issue reported</span>';
+      else pill = '<span class="status-pill status-pending">Pending</span>';
+
+      const action = o.status === 'pending'
+        ? `<button class="track-btn" onclick="openTracking('${o.orderId}','${o.orderNumber}')">Add tracking</button>`
+        : '<span style="font-size:12px;color:var(--text-hint)">Done</span>';
+
+      const date = o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '';
+
+      rOrderSel.innerHTML += `<option value="${o.orderId}">${o.orderNumber}</option>`;
+
+      return `<tr>
+        <td class="mono">${o.orderNumber}</td>
+        <td>${o.customerName}</td>
+        <td class="muted">${itemStr}${oosTag}</td>
+        <td class="muted">${o.paymentMethod}</td>
+        <td class="muted">${date}</td>
+        <td>${pill}</td>
+        <td>${action}</td>
+      </tr>`;
+    }).join('');
+
+  } catch(e) {
+    document.getElementById('orders-body').innerHTML =
+      '<tr><td colspan="7" style="text-align:center;color:var(--text-hint);padding:24px">Could not connect to Shipment API</td></tr>';
+  }
+}
+
+function openTracking(orderId, orderNumber) {
+  currentOrderId = orderId;
+  document.getElementById('track-order-label').textContent = orderNumber;
+  document.getElementById('t-order-num').value = orderNumber;
+  document.getElementById('t-carrier').value = '';
+  document.getElementById('t-tracking').value = '';
+  document.getElementById('t-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('t-time').value = new Date().toTimeString().slice(0,5);
+  document.getElementById('track-success').classList.remove('show');
+  const panel = document.getElementById('tracking-panel');
+  panel.classList.add('show');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeTracking() {
+  document.getElementById('tracking-panel').classList.remove('show');
+  currentOrderId = '';
+}
+
+async function submitTracking() {
+  const carrier  = document.getElementById('t-carrier').value;
+  const tracking = document.getElementById('t-tracking').value.trim();
+  const date     = document.getElementById('t-date').value;
+  const time     = document.getElementById('t-time').value;
+
+  if (!carrier || !tracking || !date || !time) {
+    alert('Please fill in all tracking fields.');
+    return;
+  }
+
+  const btn = document.getElementById('t-submit');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+
+  const shippedAt = `${date}T${time}:00+00:00`;
+
+  try {
+    const res = await fetch(`${API}/orders/${currentOrderId}/track`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ carrier, tracking_number: tracking, shipped_at: shippedAt })
+    });
+    const data = await res.json();
+    const succ = document.getElementById('track-success');
+    succ.textContent = `Tracking submitted for ${data.order_number}. ${carrier} #${tracking}. Customer notification sent via Kafka.`;
+    succ.classList.add('show');
+    setTimeout(() => { closeTracking(); loadOrders(); }, 2500);
+  } catch(e) {
+    alert('Could not submit tracking. Please try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit tracking';
+  }
+}
+
+function toggleReport() {
+  const panel = document.getElementById('report-panel');
+  panel.classList.toggle('show');
+  document.getElementById('report-sent').classList.remove('show');
+  if (panel.classList.contains('show')) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function submitReport() {
+  const order = document.getElementById('r-order').value;
+  const type  = document.getElementById('r-type').value;
+  const desc  = document.getElementById('r-desc').value.trim();
+  if (!order || !type || !desc) { alert('Please fill in all report fields.'); return; }
+
+  const notifyTeams = [];
+  if (document.getElementById('n-sales').checked) notifyTeams.push('sales');
+  if (document.getElementById('n-inventory').checked) notifyTeams.push('inventory');
+  if (document.getElementById('n-dev').checked) notifyTeams.push('dev');
+
+  const selectedOrder = orders.find(o => o.orderId === order);
+  const orderNumber = selectedOrder ? selectedOrder.orderNumber : '';
+
+  try {
+    const res = await fetch(`${API}/errors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_number: orderNumber, issue_type: type, description: desc, notify_teams: notifyTeams })
+    });
+    const data = await res.json();
+    const sent = document.getElementById('report-sent');
+    sent.textContent = `Report submitted. Kafka event published to errors.reported. Notifying: ${notifyTeams.join(', ')}.`;
+    sent.classList.add('show');
+    loadOrders();
+  } catch(e) {
+    alert('Could not submit report. Please try again.');
+  }
+}
+
+loadOrders();
+setInterval(loadOrders, 15000);
+</script>
+</body>
+</html>
+
