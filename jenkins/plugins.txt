@@ -1,0 +1,35 @@
+# Jenkins Plugins for BoxCo CI/CD Pipeline
+# Install these plugins after initial Jenkins setup
+
+# Core Pipeline Plugins
+workflow-aggregator          # Pipeline: full suite
+pipeline-stage-view         # Pipeline stage view
+pipeline-graph-analysis     # Pipeline graph
+
+# Kubernetes Integration
+kubernetes                  # Kubernetes plugin for dynamic agents
+kubernetes-credentials      # Kubernetes credentials
+
+# Git Integration
+git                        # Git plugin
+github                     # GitHub plugin
+github-branch-source       # GitHub Branch Source (for multibranch)
+
+# Credentials Management
+credentials                # Credentials plugin
+credentials-binding        # Credentials Binding
+
+# Docker Integration
+docker-workflow            # Docker Pipeline
+docker-commons            # Docker Commons
+
+# Build Tools
+timestamper               # Add timestamps to console output
+ansicolor                 # ANSI color support
+
+# Notifications (optional)
+slack                     # Slack notifications
+email-ext                 # Extended email
+
+# Monitoring (optional)
+prometheus                # Prometheus metrics

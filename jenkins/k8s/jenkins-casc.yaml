@@ -1,0 +1,128 @@
+# Jenkins Configuration as Code (JCasC)
+# Automates Jenkins configuration on startup
+# Mount this to /var/jenkins_config/jenkins.yaml
+
+jenkins:
+  systemMessage: "BoxCo CI/CD Pipeline - Managed by JCasC"
+  
+  numExecutors: 0  # All builds run on Kubernetes agents
+  
+  mode: EXCLUSIVE
+  
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD:-admin}"
+        - id: "developer"
+          password: "${JENKINS_DEV_PASSWORD:-developer}"
+  
+  authorizationStrategy:
+    roleBased:
+      roles:
+        global:
+          - name: "admin"
+            description: "Administrators"
+            permissions:
+              - "Overall/Administer"
+            entries:
+              - user: "admin"
+          - name: "developer"
+            description: "Developers"
+            permissions:
+              - "Overall/Read"
+              - "Job/Build"
+              - "Job/Read"
+              - "Job/Workspace"
+            entries:
+              - user: "developer"
+
+  clouds:
+    - kubernetes:
+        name: "kubernetes"
+        serverUrl: "https://kubernetes.default.svc"
+        namespace: "jenkins"
+        jenkinsUrl: "http://jenkins.jenkins.svc.cluster.local:8080"
+        jenkinsTunnel: "jenkins.jenkins.svc.cluster.local:50000"
+        containerCapStr: "10"
+        podRetention: "never"
+        
+        templates:
+          - name: "default"
+            label: "jenkins-agent"
+            nodeUsageMode: NORMAL
+            containers:
+              - name: "jnlp"
+                image: "jenkins/inbound-agent:latest"
+                workingDir: "/home/jenkins/agent"
+                ttyEnabled: true
+                command: ""
+                args: ""
+            
+          - name: "docker"
+            label: "docker"
+            nodeUsageMode: EXCLUSIVE
+            containers:
+              - name: "docker"
+                image: "docker:24-dind"
+                privileged: true
+                workingDir: "/home/jenkins/agent"
+                ttyEnabled: true
+                envVars:
+                  - envVar:
+                      key: "DOCKER_TLS_CERTDIR"
+                      value: ""
+              - name: "jnlp"
+                image: "jenkins/inbound-agent:latest"
+                workingDir: "/home/jenkins/agent"
+                ttyEnabled: true
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # GitHub credentials (update these!)
+          - usernamePassword:
+              scope: GLOBAL
+              id: "github-credentials"
+              username: "${GITHUB_USERNAME}"
+              password: "${GITHUB_TOKEN}"
+              description: "GitHub credentials for BoxCo repo"
+
+unclassified:
+  location:
+    url: "http://jenkins.jenkins.svc.cluster.local:8080/jenkins"
+    adminAddress: "admin@boxcompany.local"
+  
+  gitHubConfiguration:
+    apiRateLimitChecker: ThrottleForNormalize
+
+jobs:
+  - script: >
+      multibranchPipelineJob('boxco-pipeline') {
+        displayName('BoxCo Services Pipeline')
+        description('CI/CD pipeline for BoxCo microservices')
+        
+        branchSources {
+          github {
+            id('boxco-github')
+            repoOwner('simon-suh')
+            repository('boxcompany')
+            scanCredentialsId('github-credentials')
+            buildOriginBranch(true)
+            buildOriginBranchWithPR(false)
+            buildOriginPRMerge(true)
+          }
+        }
+        
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(5)
+          }
+        }
+        
+        triggers {
+          periodic(1)  // Scan every minute
+        }
+      }

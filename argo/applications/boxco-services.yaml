@@ -1,0 +1,75 @@
+---
+# Argo CD Application for BoxCo Services
+# This watches the k8s/services directory and auto-syncs changes
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: boxco-services
+  namespace: argocd
+  labels:
+    app: boxco
+    project: boxcompany
+  # Finalizer ensures resources are cleaned up when app is deleted
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # The Argo CD project this belongs to
+  project: default
+  
+  # Source repository and path
+  source:
+    repoURL: https://github.com/simon-suh/boxcompany.git
+    targetRevision: HEAD  # Tracks current branch
+    path: k8s/services    # Directory containing service manifests
+    
+    # Optional: Use directory-specific options
+    directory:
+      recurse: false
+      include: '*.yaml'
+  
+  # Destination cluster and namespace
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: boxco
+  
+  # Sync policy - auto-sync on Git changes
+  syncPolicy:
+    automated:
+      # Auto-prune resources that are no longer in Git
+      prune: true
+      # Auto-heal resources that drift from Git state
+      selfHeal: true
+      # Allow empty (no manifests) - useful during development
+      allowEmpty: false
+    
+    # Sync options
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      # Validate manifests before applying
+      - Validate=true
+      # Apply out-of-sync resources only
+      - ApplyOutOfSyncOnly=true
+    
+    # Retry on failed sync
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  # Health checks and status
+  revisionHistoryLimit: 10
+  
+  # Ignore differences in certain fields (prevent unnecessary syncs)
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Ignore replica count changes from HPA
+    - group: ""
+      kind: Service
+      jsonPointers:
+        - /spec/clusterIP  # Ignore auto-assigned ClusterIP

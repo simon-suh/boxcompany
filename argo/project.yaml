@@ -1,0 +1,93 @@
+---
+# Argo CD Project for BoxCo
+# Defines access controls and allowed resources
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: boxcompany
+  namespace: argocd
+  labels:
+    project: boxcompany
+  # Prevent accidental deletion
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Project description
+  description: "Box Company Order Management System"
+  
+  # Allowed source repositories
+  sourceRepos:
+    - https://github.com/simon-suh/boxcompany.git
+    - https://github.com/simon-suh/boxcompany-gitops.git  # Future GitOps repo
+  
+  # Allowed destination clusters and namespaces
+  destinations:
+    # BoxCo application namespace
+    - namespace: boxco
+      server: https://kubernetes.default.svc
+    # Observability namespace (for Grafana dashboards managed by GitOps)
+    - namespace: observability
+      server: https://kubernetes.default.svc
+    # Registry namespace
+    - namespace: registry
+      server: https://kubernetes.default.svc
+  
+  # Allowed cluster-scoped resources
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  
+  # Allowed namespace-scoped resources
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: "*"
+    - group: apps
+      kind: "*"
+    - group: batch
+      kind: "*"
+    - group: networking.k8s.io
+      kind: "*"
+    - group: monitoring.coreos.com
+      kind: "*"
+  
+  # Deny list (optional - block specific resources)
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+  
+  # Roles for this project (optional)
+  roles:
+    - name: developer
+      description: "Developer access - can sync and view"
+      policies:
+        - p, proj:boxcompany:developer, applications, get, boxcompany/*, allow
+        - p, proj:boxcompany:developer, applications, sync, boxcompany/*, allow
+      groups:
+        - boxco-developers
+    
+    - name: admin
+      description: "Admin access - full control"
+      policies:
+        - p, proj:boxcompany:admin, applications, *, boxcompany/*, allow
+      groups:
+        - boxco-admins
+  
+  # Sync windows (optional - restrict when syncs can occur)
+  # syncWindows:
+  #   - kind: allow
+  #     schedule: "0 * * * *"  # Every hour
+  #     duration: 30m
+  #     applications:
+  #       - "*"
+  #     manualSync: true
+  
+  # Orphaned resources monitoring
+  orphanedResources:
+    warn: true
+    ignore: []

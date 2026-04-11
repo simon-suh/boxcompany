@@ -1,0 +1,70 @@
+---
+# Argo CD Application for BoxCo Infrastructure
+# Manages databases, Kafka, and config - deployed before services
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: boxco-infrastructure
+  namespace: argocd
+  labels:
+    app: boxco
+    project: boxcompany
+    tier: infrastructure
+  annotations:
+    # Sync wave: infrastructure deploys before services
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  sources:
+    # Config (ConfigMaps, Secrets)
+    - repoURL: https://github.com/simon-suh/boxcompany.git
+      targetRevision: HEAD
+      path: k8s/config
+      directory:
+        recurse: false
+        include: '*.yaml'
+    
+    # Databases (PostgreSQL, DynamoDB)
+    - repoURL: https://github.com/simon-suh/boxcompany.git
+      targetRevision: HEAD
+      path: k8s/databases
+      directory:
+        recurse: false
+        include: '*.yaml'
+    
+    # Kafka and Zookeeper
+    - repoURL: https://github.com/simon-suh/boxcompany.git
+      targetRevision: HEAD
+      path: k8s/kafka
+      directory:
+        recurse: false
+        include: '*.yaml'
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: boxco
+  
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - Validate=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+  
+  # Infrastructure typically doesn't auto-update
+  # Enable manual sync for databases to prevent data loss
+  # syncPolicy:
+  #   automated: null  # Uncomment for manual sync only
+  
+  revisionHistoryLimit: 5
