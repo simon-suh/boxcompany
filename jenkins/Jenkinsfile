@@ -21,7 +21,7 @@ spec:
     - name: docker-socket
       mountPath: /var/run
   - name: kubectl
-    image: bitnami/kubectl:1.28
+    image: bitnami/kubectl:latest
     command:
     - sleep
     args:
