@@ -1,3 +1,4 @@
+from prometheus_client import make_asgi_app
 import os
 import uuid
 import random
@@ -269,3 +270,7 @@ def get_orders(db: Session = Depends(get_db)):
             "created_at":     order.created_at.isoformat() if order.created_at else None,
         })
     return result
+
+# Prometheus metrics
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
