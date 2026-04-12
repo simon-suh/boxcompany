@@ -1,3 +1,4 @@
+from prometheus_client import make_asgi_app
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -220,3 +221,7 @@ def create_product(request: NewProductRequest):
         "message":     f"New product '{request.name}' added with "
                        f"{request.initial_stock} units in stock.",
     }
+
+# Prometheus metrics
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
