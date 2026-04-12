@@ -60,6 +60,7 @@ for svc in "${SERVICES[@]}"; do
     MANIFEST="k8s/services/${svc}.yaml"
     if [ -f "$MANIFEST" ]; then
         sed -i "s|image: .*/${svc}:.*|image: ${REGISTRY}/${svc}:${IMAGE_TAG}|g" ${MANIFEST}
+        sed -i "s|value: "[0-9]"|value: "${SCENARIO}"|g" ${MANIFEST}
         sed -i "s|value: \"[0-9]\"|value: \"${SCENARIO}\"|g" ${MANIFEST}
         echo -e "${GREEN}✓ ${svc} → ${IMAGE_TAG}${NC}"
     fi
@@ -100,9 +101,9 @@ kubectl wait --for=condition=ready pod -l app=sales-api -n boxco --timeout=60s
 kubectl wait --for=condition=ready pod -l app=inventory-api -n boxco --timeout=60s
 kubectl wait --for=condition=ready pod -l app=shipment-api -n boxco --timeout=60s
 
-nohup kubectl port-forward -n boxco svc/sales-api 3001:3001 > /dev/null 2>&1 &
-nohup kubectl port-forward -n boxco svc/inventory-api 3003:3003 > /dev/null 2>&1 &
-nohup kubectl port-forward -n boxco svc/shipment-api 3002:3002 > /dev/null 2>&1 &
+kubectl port-forward -n boxco svc/sales-api 3001:3001 &
+kubectl port-forward -n boxco svc/inventory-api 3003:3003 &
+kubectl port-forward -n boxco svc/shipment-api 3002:3002 &
 sleep 5
 echo -e "${GREEN}✓ Port forwards ready${NC}"
 
