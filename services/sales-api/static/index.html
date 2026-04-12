@@ -390,9 +390,9 @@ async function loadInventory() {
     document.getElementById('count-small').textContent = `${s} units`;
     document.getElementById('count-medium').textContent = `${m} units`;
     document.getElementById('count-large').textContent = `${l} units`;
-    document.getElementById('avail-small').textContent = `${s} units`;
+    document.getElementById('avail-small').textContent = s > 0 ? `${s} units` : '0 units — out of stock';
     document.getElementById('avail-medium').textContent = m > 0 ? `${m} units` : '0 units — out of stock';
-    document.getElementById('avail-large').textContent = `${l} units`;
+    document.getElementById('avail-large').textContent = l > 0 ? `${l} units` : '0 units — out of stock';
     
     // Update small box indicator
     const smallDot = document.getElementById('dot-small');
@@ -636,8 +636,8 @@ function showErr(msg) {
 
 loadInventory();
 loadOrders();
-setInterval(loadInventory, 10000);
-setInterval(loadOrders, 15000);
+setInterval(loadInventory, 3000);
+setInterval(loadOrders, 3000);
 
 </script>
 </body>

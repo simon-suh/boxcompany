@@ -12,6 +12,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from database import get_db, Customer, Order, OrderItem, ErrorReport
+from kafka_consumer import start_consumer
 from kafka_producer import publish_order_created, publish_error_reported
 
 app = FastAPI(
@@ -35,6 +36,13 @@ app.add_middleware(
 
 SCENARIO = int(os.getenv("SCENARIO", "1"))
 INVENTORY_API_URL = os.getenv("INVENTORY_API_URL", "http://inventory-api:3003")
+
+# ── Start Kafka consumer on app startup ──────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    start_consumer()
+    print(f"[Startup] Sales API running — Scenario {SCENARIO}")
+
 
 
 class OrderItemRequest(BaseModel):
@@ -65,9 +73,14 @@ def generate_order_number() -> str:
 async def check_stock(product_id: str, quantity_requested: int) -> dict:
     """
     Checks stock for a product via the Inventory API.
-    
-    In Scenario 2, all products properly check stock before allowing orders.
+
+    SCENARIO 1 BUG: medium boxes bypass the stock check entirely.
+    SCENARIO 2 FIX: all products go through the real stock check.
     """
+    if SCENARIO == 1 and product_id == "medium-box":
+        print(f"[Scenario 1] Skipping stock check for {product_id} — known bug")
+        return {"available": 0, "in_stock": True}
+
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(
