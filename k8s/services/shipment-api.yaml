@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: shipment-api
-        image: 192.168.49.2:30500/shipment-api:main-a395e45
+        image: 192.168.49.2:30500/shipment-api:main-915b39d
         imagePullPolicy: Always
         ports:
         - containerPort: 3002

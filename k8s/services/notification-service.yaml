@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: notification-service
-        image: 192.168.49.2:30500/notification-service:main-a395e45
+        image: 192.168.49.2:30500/notification-service:main-915b39d
         imagePullPolicy: Always
         env:
         - name: KAFKA_BOOTSTRAP_SERVERS
