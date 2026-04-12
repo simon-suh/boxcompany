@@ -100,9 +100,9 @@ kubectl wait --for=condition=ready pod -l app=sales-api -n boxco --timeout=60s
 kubectl wait --for=condition=ready pod -l app=inventory-api -n boxco --timeout=60s
 kubectl wait --for=condition=ready pod -l app=shipment-api -n boxco --timeout=60s
 
-kubectl port-forward -n boxco svc/sales-api 3001:3001 &
-kubectl port-forward -n boxco svc/inventory-api 3003:3003 &
-kubectl port-forward -n boxco svc/shipment-api 3002:3002 &
+nohup kubectl port-forward -n boxco svc/sales-api 3001:3001 > /dev/null 2>&1 &
+nohup kubectl port-forward -n boxco svc/inventory-api 3003:3003 > /dev/null 2>&1 &
+nohup kubectl port-forward -n boxco svc/shipment-api 3002:3002 > /dev/null 2>&1 &
 sleep 5
 echo -e "${GREEN}✓ Port forwards ready${NC}"
 
