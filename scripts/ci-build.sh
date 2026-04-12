@@ -1,7 +1,7 @@
 #!/bin/bash
 # BoxCo CI Build Script
-# Replaces Jenkins - builds images, pushes to registry, updates manifests
-
+# Builds images, pushes to registry, updates manifests, commits to git
+# ArgoCD auto-syncs when it detects manifest changes
 set -e
 
 RED='\033[0;31m'
@@ -37,7 +37,7 @@ SERVICES=("sales-api" "inventory-api" "shipment-api" "notification-service")
 
 for svc in "${SERVICES[@]}"; do
     echo -e "${BLUE}Building ${svc}...${NC}"
-    docker build -t ${REGISTRY}/${svc}:${IMAGE_TAG} -t ${REGISTRY}/${svc}:latest services/${svc}/
+    docker build -t ${REGISTRY}/${svc}:${IMAGE_TAG} services/${svc}/
     echo -e "${GREEN}✓ ${svc} built${NC}"
 done
 
@@ -46,7 +46,6 @@ echo -e "\n${YELLOW}═══ Pushing Images ═══${NC}"
 for svc in "${SERVICES[@]}"; do
     echo -e "${BLUE}Pushing ${svc}...${NC}"
     docker push ${REGISTRY}/${svc}:${IMAGE_TAG}
-    docker push ${REGISTRY}/${svc}:latest
     echo -e "${GREEN}✓ ${svc} pushed${NC}"
 done
 
@@ -60,14 +59,21 @@ for svc in "${SERVICES[@]}"; do
     fi
 done
 
-# Trigger Argo CD sync (or wait for auto-sync)
-echo -e "\n${YELLOW}═══ Triggering Deployment ═══${NC}"
-kubectl rollout restart deployment sales-api -n boxco
-kubectl rollout restart deployment inventory-api -n boxco
-kubectl rollout restart deployment shipment-api -n boxco
-kubectl rollout restart deployment notification-service -n boxco
+# Commit and push manifest changes to git
+echo -e "\n${YELLOW}═══ Committing Manifest Changes to Git ═══${NC}"
+git add k8s/services/*.yaml
+git commit -m "ci: update image tags to ${IMAGE_TAG}" || echo -e "${YELLOW}No changes to commit${NC}"
+git push origin ${BRANCH}
+echo -e "${GREEN}✓ Pushed to origin/${BRANCH}${NC}"
 
-echo -e "\n${YELLOW}Waiting for rollouts to complete...${NC}"
+# ArgoCD will auto-sync, but show status
+echo -e "\n${YELLOW}═══ ArgoCD Status ═══${NC}"
+echo -e "${BLUE}ArgoCD will detect manifest changes and auto-sync.${NC}"
+echo -e "${BLUE}Watch progress at: http://localhost:8081${NC}"
+
+# Wait for pods to update (ArgoCD sync)
+echo -e "\n${YELLOW}═══ Waiting for Deployment ═══${NC}"
+sleep 5
 kubectl rollout status deployment/sales-api -n boxco --timeout=120s
 kubectl rollout status deployment/inventory-api -n boxco --timeout=120s
 kubectl rollout status deployment/shipment-api -n boxco --timeout=120s
@@ -76,12 +82,15 @@ kubectl rollout status deployment/notification-service -n boxco --timeout=120s
 echo -e "\n${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║     ✅ CI/CD Pipeline Complete!                            ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
-echo -e "\n${BLUE}Images pushed:${NC}"
+
+echo -e "\n${BLUE}Images deployed:${NC}"
 for svc in "${SERVICES[@]}"; do
     echo "  - ${REGISTRY}/${svc}:${IMAGE_TAG}"
 done
+
 echo -e "\n${BLUE}View your app:${NC}"
 echo "  Sales Portal:     http://localhost:3001"
 echo "  Shipment Portal:  http://localhost:3002"
 echo "  Inventory Portal: http://localhost:3003"
+echo "  ArgoCD:           http://localhost:8081"
 echo "  Grafana:          http://localhost:3000"
