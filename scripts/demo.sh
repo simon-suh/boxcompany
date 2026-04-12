@@ -107,6 +107,11 @@ done
 # ═══════════════════════════════════════════════════════════════════════════════
 # Commit and Push to Git
 # ═══════════════════════════════════════════════════════════════════════════════
+# Apply manifests directly for immediate deployment
+echo -e "\n${YELLOW}═══ Applying Manifests ═══${NC}"
+kubectl apply -f k8s/services/
+echo -e "${GREEN}✓ Manifests applied${NC}"
+
 echo -e "\n${YELLOW}═══ Committing Manifest Changes to Git ═══${NC}"
 git add k8s/services/*.yaml
 git commit -m "ci: update image tags to ${IMAGE_TAG}" || echo -e "${YELLOW}No changes to commit${NC}"
@@ -126,6 +131,10 @@ kubectl rollout status deployment/inventory-api -n boxco --timeout=120s
 kubectl rollout status deployment/shipment-api -n boxco --timeout=120s
 kubectl rollout status deployment/notification-service -n boxco --timeout=120s
 
+# Wait for ArgoCD to finish syncing
+echo -e "${BLUE}Waiting for pods to stabilize...${NC}"
+sleep 10
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Port Forwards
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -133,11 +142,18 @@ echo -e "\n${YELLOW}═══ Setting Up Port Forwards ═══${NC}"
 pkill -f "port-forward.*3001" || true
 pkill -f "port-forward.*3002" || true
 pkill -f "port-forward.*3003" || true
-sleep 3
+sleep 5
+
+# Verify pods are running
+echo -e "${BLUE}Verifying pods are ready...${NC}"
+kubectl wait --for=condition=ready pod -l app=sales-api -n boxco --timeout=60s
+kubectl wait --for=condition=ready pod -l app=inventory-api -n boxco --timeout=60s
+kubectl wait --for=condition=ready pod -l app=shipment-api -n boxco --timeout=60s
+
 kubectl port-forward -n boxco svc/sales-api 3001:3001 &
 kubectl port-forward -n boxco svc/inventory-api 3003:3003 &
 kubectl port-forward -n boxco svc/shipment-api 3002:3002 &
-sleep 3
+sleep 5
 echo -e "${GREEN}✓ Port forwards ready${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
