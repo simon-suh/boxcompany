@@ -13,6 +13,12 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 SCENARIO=${1:-1}
+
+# Temporarily disable ArgoCD auto-sync to prevent race condition
+kubectl patch application boxco-services -n argocd --type=merge -p '{"spec":{"syncPolicy":null}}' 2>/dev/null || true
+
+# Disable ArgoCD auto-sync to prevent race condition
+kubectl patch application boxco-services -n argocd --type=merge -p '{"spec":{"syncPolicy":null}}' 2>/dev/null || true
 BRANCH=$(git branch --show-current)
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -187,6 +193,10 @@ case $SCENARIO in
     echo "  • New feature: XL boxes now available"
     ;;
 esac
+
+# Re-enable ArgoCD auto-sync
+kubectl patch application boxco-services -n argocd --type=merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}' 2>/dev/null || true
+echo -e "${GREEN}✓ ArgoCD auto-sync re-enabled${NC}"
 
 echo -e "\n${BLUE}View your app:${NC}"
 echo "  Sales Portal:     http://localhost:3001"
