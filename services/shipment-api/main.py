@@ -1,3 +1,4 @@
+from prometheus_client import make_asgi_app
 import os
 import uuid
 from datetime import datetime, timezone
@@ -236,3 +237,7 @@ def get_error_reports():
         }
     except Exception as e:
         return {"errors": [], "total": 0, "note": str(e)}
+
+# Prometheus metrics
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
