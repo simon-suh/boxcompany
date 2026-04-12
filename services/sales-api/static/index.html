@@ -10,7 +10,7 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg: #ffffff;
+    --bg: #ffffff;  /* Keep this as solid white for cards/topbar */
     --surface: #f7f7f5;
     --border: #e8e8e4;
     --border-strong: #d0d0ca;
@@ -18,7 +18,6 @@
     --text-muted: #6b6b65;
     --text-hint: #9e9e96;
     --accent: #1a1a18;
-    --accent-hover: #333330;
     --success-bg: #f0faf4;
     --success-border: #a3d9b5;
     --success-text: #1a5c35;
@@ -28,28 +27,28 @@
     --warn-bg: #fffbf0;
     --warn-border: #f0d890;
     --warn-text: #7c5c00;
-    --out-stock: #e84040;
-    --in-stock: #2a9d5c;
     --radius: 6px;
     --radius-lg: 10px;
+    --in-stock: #2a9d5c;
+    --out-stock: #e84040;
   }
 
   html { font-size: 15px; }
   body { 
     font-family: 'DM Sans', sans-serif; 
-    background: #b0b0b0; 
+    background: linear-gradient(to bottom, #ffffff 0%, #808080 40%, #808080 100%); 
     color: var(--text); 
     min-height: 100vh; 
   }
 
   .topbar {
     position: sticky; top: 0; z-index: 100;
-    background: var(--bg);
+    background: var(--bg);  /* Now uses solid white, which is correct */
     border-bottom: 1px solid var(--border);
-    padding: 0 32px;
-    height: 52px;
+    padding: 0 32px; height: 52px;
     display: flex; align-items: center; justify-content: space-between;
   }
+  
   .brand { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; letter-spacing: 0.04em; }
   .scenario-tag {
     font-family: 'DM Mono', monospace; font-size: 11px;
@@ -217,7 +216,6 @@
     padding: 2px 8px; border-radius: 20px;
   }
   .status-pending { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border); }
-  .status-shipped { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
 
   @media (max-width: 600px) {
     .form-grid, .pay-grid { grid-template-columns: 1fr; }
@@ -230,7 +228,7 @@
 
 <div class="topbar">
   <span class="brand">BOXCO / Sales portal</span>
-  <span class="scenario-tag">Scenario 3</span>
+  <span class="scenario-tag">Scenario 2</span>
 </div>
 
 <div class="page">
@@ -254,11 +252,6 @@
       <span class="label">Large box</span>
       <span class="count" id="count-large">...</span>
     </div>
-    <div class="stock-pill">
-      <span class="stock-dot dot-in" id="dot-xl"></span>
-      <span class="label">XL box</span>
-      <span class="count" id="count-xl">...</span>
-    </div>
   </div>
 
   <!-- Confirmation panel -->
@@ -275,20 +268,20 @@
   <!-- Order form -->
   <div class="card">
     <div class="section-label">Customer details</div>
-    <div class="form-grid">
-      <div class="field">
-        <label>Customer name</label>
-        <input type="text" id="f-name" placeholder="Full name"/>
-      </div>
-      <div class="field">
-        <label>Phone number</label>
-        <input type="tel" id="f-phone" placeholder="+1 (555) 000-0000" pattern="[\+]?[0-9\s\-\(\)]{10,20}" title="Please enter a valid phone number (10-20 digits)"/>
-      </div>
-      <div class="field full">
-        <label>Email address</label>
-        <input type="email" id="f-email" placeholder="customer@email.com" pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}" title="Please enter a valid email address"/>
-      </div>
-    </div>
+<div class="form-grid">
+  <div class="field">
+    <label>Customer name</label>
+    <input type="text" id="f-name" placeholder="Full name"/>
+  </div>
+  <div class="field">
+    <label>Phone number</label>
+    <input type="tel" id="f-phone" placeholder="+1 (555) 000-0000" pattern="[\+]?[0-9\s\-\(\)]{10,20}" title="Please enter a valid phone number (10-20 digits)"/>
+  </div>
+  <div class="field full">
+    <label>Email address</label>
+    <input type="email" id="f-email" placeholder="customer@email.com" pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}" title="Please enter a valid email address"/>
+  </div>
+</div>
 
     <div class="section-label" style="margin-top:24px">Order items</div>
     <table class="items-table">
@@ -327,16 +320,6 @@
             <div class="qty-wrap">
               <input class="qty-input" id="qty-large" type="number" min="0" value="0" oninput="validateQty('large')"/>
               <span class="qty-err" id="err-large"></span>
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td><span class="size-tag"><span class="dot dot-in" id="dot-xl-table"></span>XL box</span></td>
-          <td><span class="avail in" id="avail-xl">150 units</span></td>
-          <td>
-            <div class="qty-wrap">
-              <input class="qty-input" id="qty-xl" type="number" min="0" value="0" oninput="validateQty('xl')"/>
-              <span class="qty-err" id="err-xl"></span>
             </div>
           </td>
         </tr>
@@ -402,17 +385,14 @@ async function loadInventory() {
     const s = inventory['small-box'] ?? 0;
     const m = inventory['medium-box'] ?? 0;
     const l = inventory['large-box'] ?? 0;
-    const x = inventory['xl-box'] ?? 0;
     
     // Update counts
     document.getElementById('count-small').textContent = `${s} units`;
     document.getElementById('count-medium').textContent = `${m} units`;
     document.getElementById('count-large').textContent = `${l} units`;
-    document.getElementById('count-xl').textContent = `${x} units`;
-    document.getElementById('avail-small').textContent = `${s} units`;
+    document.getElementById('avail-small').textContent = s > 0 ? `${s} units` : '0 units — out of stock';
     document.getElementById('avail-medium').textContent = m > 0 ? `${m} units` : '0 units — out of stock';
-    document.getElementById('avail-large').textContent = `${l} units`;
-    document.getElementById('avail-xl').textContent = `${x} units`;
+    document.getElementById('avail-large').textContent = l > 0 ? `${l} units` : '0 units — out of stock';
     
     // Update small box indicator
     const smallDot = document.getElementById('dot-small');
@@ -473,26 +453,6 @@ async function loadInventory() {
       largeAvail.classList.remove('in');
       largeAvail.classList.add('out');
     }
-    
-    // Update XL box indicator
-    const xlDot = document.getElementById('dot-xl');
-    const xlTableDot = document.getElementById('dot-xl-table');
-    const xlAvail = document.getElementById('avail-xl');
-    if (x > 0) {
-      xlDot.classList.remove('dot-out');
-      xlDot.classList.add('dot-in');
-      xlTableDot.classList.remove('dot-out');
-      xlTableDot.classList.add('dot-in');
-      xlAvail.classList.remove('out');
-      xlAvail.classList.add('in');
-    } else {
-      xlDot.classList.remove('dot-in');
-      xlDot.classList.add('dot-out');
-      xlTableDot.classList.remove('dot-in');
-      xlTableDot.classList.add('dot-out');
-      xlAvail.classList.remove('in');
-      xlAvail.classList.add('out');
-    }
   } catch(e) {
     console.error('Could not load inventory:', e);
   }
@@ -514,7 +474,7 @@ async function loadOrders() {
         <td>${o.customer_name}</td>
         <td style="color:var(--text-muted)">${items}</td>
         <td style="color:var(--text-muted)">${o.payment_method}</td>
-        <td><span class="status-pill status-${o.status}">${o.status}</span></td>
+        <td><span class="status-pill status-pending">${o.status}</span></td>
       </tr>`;
     }).join('');
   } catch(e) {
@@ -562,7 +522,6 @@ async function submitOrder() {
   const qS = parseInt(document.getElementById('qty-small').value) || 0;
   const qM = parseInt(document.getElementById('qty-medium').value) || 0;
   const qL = parseInt(document.getElementById('qty-large').value) || 0;
-  const qX = parseInt(document.getElementById('qty-xl').value) || 0;
   const errEl = document.getElementById('form-err');
 
   // Validation
@@ -586,8 +545,8 @@ async function submitOrder() {
     }
   }
   
-  if (qS === 0 && qM === 0 && qL === 0 && qX === 0) { showErr('Please enter a quantity for at least one product.'); return; }
-  if (!validateQty('small') || !validateQty('large') || !validateQty('xl')) { showErr('One or more quantities exceed available stock.'); return; }
+  if (qS === 0 && qM === 0 && qL === 0) { showErr('Please enter a quantity for at least one product.'); return; }
+  if (!validateQty('small') || !validateQty('large')) { showErr('One or more quantities exceed available stock.'); return; }
   if (!selectedPay) { showErr('Please select a payment method.'); return; }
   errEl.classList.remove('show');
 
@@ -595,7 +554,6 @@ async function submitOrder() {
   if (qS > 0) items.push({ product_id: 'small-box', product_name: 'Small box', quantity: qS });
   if (qM > 0) items.push({ product_id: 'medium-box', product_name: 'Medium box', quantity: qM });
   if (qL > 0) items.push({ product_id: 'large-box', product_name: 'Large box', quantity: qL });
-  if (qX > 0) items.push({ product_id: 'xl-box', product_name: 'XL box', quantity: qX });
 
   const btn = document.getElementById('submit-btn');
   btn.disabled = true;
@@ -647,7 +605,6 @@ async function submitOrder() {
     document.getElementById('qty-small').value = 0;
     document.getElementById('qty-medium').value = 0;
     document.getElementById('qty-large').value = 0;
-    document.getElementById('qty-xl').value = 0;
     document.getElementById('medium-warn').classList.remove('show');
     selectedPay = '';
     ['card','invoice','ach','check'].forEach(p => {
@@ -679,8 +636,8 @@ function showErr(msg) {
 
 loadInventory();
 loadOrders();
-setInterval(loadInventory, 5000);
-setInterval(loadOrders, 5000);
+setInterval(loadInventory, 3000);
+setInterval(loadOrders, 3000);
 
 </script>
 </body>
