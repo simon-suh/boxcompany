@@ -1,9 +1,11 @@
 #!/bin/bash
-# BoxCo Demo Script
+# BoxCo Fast Demo Script (uses pre-built images)
 # Usage:
 #   ./scripts/demo.sh      - Deploy scenario-1 (initial setup)
-#   ./scripts/demo.sh 2    - Magic Moment 1: Merge & deploy scenario-2 (bug fix)
-#   ./scripts/demo.sh 3    - Magic Moment 2: Merge & deploy scenario-3 (XL boxes)
+#   ./scripts/demo.sh 2    - Magic Moment 1: Deploy scenario-2 (bug fix)
+#   ./scripts/demo.sh 3    - Magic Moment 2: Deploy scenario-3 (XL boxes)
+#
+# Prerequisites: Run ./scripts/setup-images.sh first to pre-build images
 set -e
 
 RED='\033[0;31m'
@@ -13,7 +15,14 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 SCENARIO=${1:-1}
-BRANCH=$(git branch --show-current)
+
+# Temporarily disable ArgoCD auto-sync to prevent race condition
+kubectl patch application boxco-services -n argocd --type=merge -p '{"spec":{"syncPolicy":null}}' 2>/dev/null || true
+
+MINIKUBE_IP=$(minikube ip)
+REGISTRY="${MINIKUBE_IP}:30500"
+SERVICES=("sales-api" "inventory-api" "shipment-api" "notification-service")
+IMAGE_TAG="scenario-${SCENARIO}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Header
@@ -37,103 +46,43 @@ case $SCENARIO in
   *)
     echo -e "${RED}Usage: ./scripts/demo.sh [1|2|3]${NC}"
     echo "  1 - Deploy scenario-1 (default)"
-    echo "  2 - Merge & deploy scenario-2 (bug fix)"
-    echo "  3 - Merge & deploy scenario-3 (XL boxes)"
+    echo "  2 - Deploy scenario-2 (bug fix)"
+    echo "  3 - Deploy scenario-3 (XL boxes)"
     exit 1
     ;;
 esac
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Merge (for scenarios 2 and 3)
+# Update Manifests with Pre-built Image Tags
 # ═══════════════════════════════════════════════════════════════════════════════
-if [ "$SCENARIO" = "2" ]; then
-  echo -e "\n${YELLOW}═══ Merging Scenario 2 ═══${NC}"
-  git merge -X theirs scenario-2 -m "Deploy scenario-2: fix stock validation bug"
-  echo -e "${GREEN}✓ Merged scenario-2${NC}"
-elif [ "$SCENARIO" = "3" ]; then
-  echo -e "\n${YELLOW}═══ Merging Scenario 3 ═══${NC}"
-  git merge -X theirs scenario-3 -m "Deploy scenario-3: add XL boxes"
-  echo -e "${GREEN}✓ Merged scenario-3${NC}"
-fi
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Build Images
-# ═══════════════════════════════════════════════════════════════════════════════
-COMMIT=$(git rev-parse --short HEAD)
-IMAGE_TAG="${BRANCH}-${COMMIT}"
-MINIKUBE_IP=$(minikube ip)
-REGISTRY="${MINIKUBE_IP}:30500"
-
-echo -e "\n${YELLOW}Branch:${NC} ${BRANCH}"
-echo -e "${YELLOW}Commit:${NC} ${COMMIT}"
-echo -e "${YELLOW}Image Tag:${NC} ${IMAGE_TAG}"
-echo -e "${YELLOW}Registry:${NC} ${REGISTRY}"
-
-echo -e "\n${YELLOW}═══ Configuring Docker ═══${NC}"
-eval $(minikube docker-env)
-echo -e "${GREEN}✓ Using Minikube's Docker daemon${NC}"
-
-echo -e "\n${YELLOW}═══ Building Images ═══${NC}"
-SERVICES=("sales-api" "inventory-api" "shipment-api" "notification-service")
-
-for svc in "${SERVICES[@]}"; do
-    echo -e "${BLUE}Building ${svc}...${NC}"
-    docker build -t ${REGISTRY}/${svc}:${IMAGE_TAG} services/${svc}/
-    echo -e "${GREEN}✓ ${svc} built${NC}"
-done
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Push Images
-# ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Pushing Images ═══${NC}"
-for svc in "${SERVICES[@]}"; do
-    echo -e "${BLUE}Pushing ${svc}...${NC}"
-    docker push ${REGISTRY}/${svc}:${IMAGE_TAG}
-    echo -e "${GREEN}✓ ${svc} pushed${NC}"
-done
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Update Manifests
-# ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Updating Kubernetes Manifests ═══${NC}"
+echo -e "\n${YELLOW}═══ Updating Manifests ═══${NC}"
 for svc in "${SERVICES[@]}"; do
     MANIFEST="k8s/services/${svc}.yaml"
     if [ -f "$MANIFEST" ]; then
         sed -i "s|image: .*/${svc}:.*|image: ${REGISTRY}/${svc}:${IMAGE_TAG}|g" ${MANIFEST}
-        echo -e "${GREEN}✓ Updated ${MANIFEST}${NC}"
+        echo -e "${GREEN}✓ ${svc} → ${IMAGE_TAG}${NC}"
     fi
 done
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Commit and Push to Git
+# Apply Manifests
 # ═══════════════════════════════════════════════════════════════════════════════
-# Apply manifests directly for immediate deployment
 echo -e "\n${YELLOW}═══ Applying Manifests ═══${NC}"
 kubectl apply -f k8s/services/
 echo -e "${GREEN}✓ Manifests applied${NC}"
 
-echo -e "\n${YELLOW}═══ Committing Manifest Changes to Git ═══${NC}"
-git add k8s/services/*.yaml
-git commit -m "ci: update image tags to ${IMAGE_TAG}" || echo -e "${YELLOW}No changes to commit${NC}"
-git push origin ${BRANCH}
-echo -e "${GREEN}✓ Pushed to origin/${BRANCH}${NC}"
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# Wait for ArgoCD & Deployments
+# Wait for Deployments
 # ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Waiting for ArgoCD Sync ═══${NC}"
-echo -e "${BLUE}ArgoCD will detect manifest changes and auto-sync.${NC}"
-sleep 10
-
 echo -e "\n${YELLOW}═══ Waiting for Deployments ═══${NC}"
-kubectl rollout status deployment/sales-api -n boxco --timeout=120s
-kubectl rollout status deployment/inventory-api -n boxco --timeout=120s
-kubectl rollout status deployment/shipment-api -n boxco --timeout=120s
-kubectl rollout status deployment/notification-service -n boxco --timeout=120s
+kubectl rollout status deployment/sales-api -n boxco --timeout=60s
+kubectl rollout status deployment/inventory-api -n boxco --timeout=60s
+kubectl rollout status deployment/shipment-api -n boxco --timeout=60s
+kubectl rollout status deployment/notification-service -n boxco --timeout=60s
 
-# Wait for ArgoCD to finish syncing
-echo -e "${BLUE}Waiting for pods to stabilize...${NC}"
-sleep 10
+# Wait for pods to stabilize (30s)
+echo -e "${BLUE}Waiting for pods to stabilize (30s)...${NC}"
+sleep 30
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Port Forwards

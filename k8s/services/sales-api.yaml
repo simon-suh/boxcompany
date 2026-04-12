@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: sales-api
-        image: 192.168.49.2:30500/sales-api:main-915b39d
+        image: 192.168.49.2:30500/sales-api:scenario-1
         imagePullPolicy: Always
         ports:
         - containerPort: 3001
