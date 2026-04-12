@@ -471,6 +471,21 @@ function toggleReport() {
   } else {
     // Resume auto-refresh when panel closes
     refreshInterval = setInterval(loadOrders, 3000);
+
+// Auto-reload on scenario change
+let currentScenario = null;
+async function checkScenario() {
+  try {
+    const res = await fetch("/health");
+    const data = await res.json();
+    if (currentScenario === null) {
+      currentScenario = data.scenario;
+    } else if (currentScenario !== data.scenario) {
+      location.reload();
+    }
+  } catch(e) {}
+}
+setInterval(checkScenario, 2000);
   }
 }
 
@@ -526,6 +541,21 @@ async function submitReport() {
 // Initialize
 loadOrders();
 refreshInterval = setInterval(loadOrders, 3000);
+
+// Auto-reload on scenario change
+let currentScenario = null;
+async function checkScenario() {
+  try {
+    const res = await fetch("/health");
+    const data = await res.json();
+    if (currentScenario === null) {
+      currentScenario = data.scenario;
+    } else if (currentScenario !== data.scenario) {
+      location.reload();
+    }
+  } catch(e) {}
+}
+setInterval(checkScenario, 2000);
 
 </script>
 </body>
