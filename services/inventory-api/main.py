@@ -79,6 +79,9 @@ def get_inventory():
         live stock counts on the order form
     """
     products = get_all_products()
+    # Filter out XL box for scenarios 1 and 2
+    if SCENARIO < 3:
+        products = [p for p in products if p.get("productId") != "xl-box"]
     return {
         "products": [
             {
