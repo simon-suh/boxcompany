@@ -1,0 +1,56 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: boxco-services
+  namespace: observability
+  labels:
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+    - boxco
+  selector:
+    matchLabels:
+      app: sales-api
+  endpoints:
+  - port: http
+    path: /metrics/
+    interval: 5s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: boxco-inventory
+  namespace: observability
+  labels:
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+    - boxco
+  selector:
+    matchLabels:
+      app: inventory-api
+  endpoints:
+  - port: http
+    path: /metrics/
+    interval: 5s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: boxco-shipment
+  namespace: observability
+  labels:
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+    - boxco
+  selector:
+    matchLabels:
+      app: shipment-api
+  endpoints:
+  - port: http
+    path: /metrics/
+    interval: 5s
