@@ -156,11 +156,27 @@ if [ -n "$ARGOCD_PASS" ]; then
     echo -e "              (admin/${ARGOCD_PASS})"
 fi
 
-echo -e "\n${BLUE}Next steps:${NC}"
-echo -e "  1. Run ${YELLOW}./scripts/demo-setup.sh${NC} to pre-build scenario images"
-echo -e "  2. Run ${YELLOW}./scripts/demo-run.sh${NC} to deploy Scenario 1"
-echo -e "  3. Open browser tabs:"
-echo -e "     - http://localhost:3001 (Sales)"
-echo -e "     - http://localhost:3002 (Shipment)"
-echo -e "     - http://localhost:3003 (Inventory)"
-echo -e "     - http://localhost:3000 (Grafana)"
+
+echo ""
+read -p "Do you want to build scenario images now? (~10 min) [y/N]: " BUILD_IMAGES
+
+if [[ "$BUILD_IMAGES" =~ ^[Yy]$ ]]; then
+    echo -e "\n${YELLOW}Building scenario images...${NC}"
+    ./scripts/demo-setup.sh
+    echo -e "\n${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║          ✅ Ready to Demo!                                 ║${NC}"
+    echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "\n${BLUE}Open browser tabs:${NC}"
+    echo -e "  - http://localhost:3001 (Sales)"
+    echo -e "  - http://localhost:3002 (Shipment)"
+    echo -e "  - http://localhost:3003 (Inventory)"
+    echo -e "  - http://localhost:3000 (Grafana)"
+    echo -e "\n${BLUE}Run the demo:${NC}"
+    echo -e "  ${YELLOW}./scripts/demo-run.sh${NC}        # Scenario 1"
+    echo -e "  ${YELLOW}./scripts/demo-run.sh 2${NC}      # Scenario 2"
+    echo -e "  ${YELLOW}./scripts/demo-run.sh 3${NC}      # Scenario 3"
+else
+    echo -e "\n${BLUE}When ready, run:${NC}"
+    echo -e "  1. ${YELLOW}./scripts/demo-setup.sh${NC}   # Pre-build images (~10 min)"
+    echo -e "  2. ${YELLOW}./scripts/demo-run.sh${NC}     # Deploy Scenario 1"
+fi
