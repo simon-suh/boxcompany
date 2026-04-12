@@ -25,11 +25,11 @@ spec:
         - name: DB_PORT
           value: "5432"
         - name: DB_NAME
-          value: "boxco_db"
+          value: "sales"
         - name: DB_USER
-          value: "boxco_user"
+          value: "boxco"
         - name: DB_PASSWORD
-          value: "boxco_pass"
+          value: "password"
         - name: KAFKA_BROKERS
           value: "kafka:9092"
         - name: SCENARIO
