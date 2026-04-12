@@ -1,4 +1,9 @@
-from prometheus_client import make_asgi_app
+from prometheus_client import make_asgi_app, Counter
+
+# Custom business metrics
+orders_created_total = Counter("orders_created_total", "Total orders created", ["status"])
+stock_validation_errors_total = Counter("stock_validation_errors_total", "Stock validation errors", ["product_name"])
+order_items_total = Counter("order_items_total", "Items ordered by product", ["product_name"])
 import os
 import uuid
 import random
@@ -136,12 +141,14 @@ async def create_order(request: OrderRequest, db: Session = Depends(get_db)):
     for item in request.items:
         stock = await check_stock(item.product_id, item.quantity)
         if not stock["in_stock"]:
+            stock_validation_errors_total.labels(product_name=item.product_name).inc()
             stock_errors.append(
                 f"{item.product_name}: requested {item.quantity}, "
                 f"only {stock['available']} available."
             )
 
     if stock_errors:
+        orders_created_total.labels(status="failed").inc()
         raise HTTPException(
             status_code = 400,
             detail      = {
@@ -197,6 +204,10 @@ async def create_order(request: OrderRequest, db: Session = Depends(get_db)):
         items    = order_items,
     )
 
+    # Increment metrics
+    orders_created_total.labels(status="success").inc()
+    for item in request.items:
+        order_items_total.labels(product_name=item.product_name).inc()
     # Step 5: Return confirmation
     return {
         "success":      True,
