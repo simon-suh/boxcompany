@@ -60,6 +60,7 @@ for svc in "${SERVICES[@]}"; do
     MANIFEST="k8s/services/${svc}.yaml"
     if [ -f "$MANIFEST" ]; then
         sed -i "s|image: .*/${svc}:.*|image: ${REGISTRY}/${svc}:${IMAGE_TAG}|g" ${MANIFEST}
+        sed -i "s|value: "[0-9]"|value: "${SCENARIO}"|g" ${MANIFEST}
         sed -i "s|value: \"[0-9]\"|value: \"${SCENARIO}\"|g" ${MANIFEST}
         echo -e "${GREEN}✓ ${svc} → ${IMAGE_TAG}${NC}"
     fi
