@@ -7,6 +7,12 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# Parse flags
+AUTO_YES=false
+if [[ "$1" == "-y" || "$1" == "--yes" ]]; then
+    AUTO_YES=true
+fi
+
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║     Pre-building All Scenario Images                       ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
@@ -62,3 +68,13 @@ echo "  scenario-1: ${REGISTRY}/*:scenario-1"
 echo "  scenario-2: ${REGISTRY}/*:scenario-2"
 echo "  scenario-3: ${REGISTRY}/*:scenario-3"
 echo -e "\n${YELLOW}Now run: ./scripts/demo-run.sh${NC}"
+
+echo ""
+if [[ "$AUTO_YES" == true ]]; then
+    DEPLOY_NOW="y"
+else
+    read -p "Deploy Scenario 1 now? [y/N]: " DEPLOY_NOW
+fi
+if [[ "$DEPLOY_NOW" =~ ^[Yy]$ ]]; then
+    ./scripts/demo-run.sh
+fi

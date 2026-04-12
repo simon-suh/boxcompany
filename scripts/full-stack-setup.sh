@@ -14,6 +14,12 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Parse flags
+AUTO_YES=false
+if [[ "$1" == "-y" || "$1" == "--yes" ]]; then
+    AUTO_YES=true
+fi
+
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║          BoxCo Full Stack Setup                            ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
@@ -158,11 +164,19 @@ fi
 
 
 echo ""
-read -p "Do you want to build scenario images now? (~10 min) [y/N]: " BUILD_IMAGES
+if [[ "$AUTO_YES" == true ]]; then
+    BUILD_IMAGES="y"
+else
+    read -p "Do you want to build scenario images now? (~10 min) [y/N]: " BUILD_IMAGES
+fi
 
 if [[ "$BUILD_IMAGES" =~ ^[Yy]$ ]]; then
     echo -e "\n${YELLOW}Building scenario images...${NC}"
-    ./scripts/demo-setup.sh
+    if [[ "$AUTO_YES" == true ]]; then
+        ./scripts/demo-setup.sh -y
+    else
+        ./scripts/demo-setup.sh
+    fi
     echo -e "\n${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║          ✅ Ready to Demo!                                 ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
