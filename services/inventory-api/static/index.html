@@ -396,6 +396,21 @@ function renderLog() {
 
 loadInventory();
 setInterval(loadInventory, 3000);
+
+// Auto-reload on scenario change
+let currentScenario = null;
+async function checkScenario() {
+  try {
+    const res = await fetch("/health");
+    const data = await res.json();
+    if (currentScenario === null) {
+      currentScenario = data.scenario;
+    } else if (currentScenario !== data.scenario) {
+      location.reload();
+    }
+  } catch(e) {}
+}
+setInterval(checkScenario, 2000);
 </script>
 </body>
 </html>
