@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: sales-api
-        image: 192.168.49.2:30500/sales-api:latest
+        image: 192.168.49.2:30500/sales-api:scenario-1
         imagePullPolicy: Always
         ports:
         - containerPort: 3001
@@ -25,15 +25,15 @@ spec:
         - name: DB_PORT
           value: "5432"
         - name: DB_NAME
-          value: "boxco_db"
+          value: "sales"
         - name: DB_USER
-          value: "boxco_user"
+          value: "boxco"
         - name: DB_PASSWORD
-          value: "boxco_pass"
+          value: "password"
         - name: KAFKA_BROKERS
           value: "kafka:9092"
         - name: SCENARIO
-          value: "3"
+          value: "1"
         - name: INVENTORY_API_URL
           value: "http://inventory-api:3003"
 ---
