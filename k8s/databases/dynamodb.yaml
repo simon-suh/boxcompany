@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamodb
+  namespace: boxco
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dynamodb
+  template:
+    metadata:
+      labels:
+        app: dynamodb
+    spec:
+      containers:
+      - name: dynamodb
+        image: amazon/dynamodb-local:2.0.0
+        args:
+          - "-jar"
+          - "DynamoDBLocal.jar"
+          - "-inMemory"
+          - "-sharedDb"
+        ports:
+        - containerPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynamodb
+  namespace: boxco
+spec:
+  selector:
+    app: dynamodb
+  ports:
+  - port: 8000
+    targetPort: 8000
+  type: ClusterIP

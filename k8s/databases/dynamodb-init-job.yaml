@@ -1,0 +1,93 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dynamodb-init
+  namespace: boxco
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init
+        image: public.ecr.aws/aws-cli/aws-cli:latest
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            echo "Waiting for DynamoDB to be ready..."
+            
+            yum install -y nc 2>/dev/null || true
+            
+            READY=false
+            for i in {1..30}; do
+              if nc -z dynamodb 8000 2>/dev/null; then
+                echo "✓ DynamoDB is reachable!"
+                READY=true
+                break
+              fi
+              echo "Attempt $i/30: DynamoDB not ready, waiting 2s..."
+              sleep 2
+            done
+            
+            if [ "$READY" = false ]; then
+              echo "ERROR: DynamoDB never became reachable"
+              exit 1
+            fi
+            
+            sleep 5
+            
+            echo "Creating tables..."
+            aws dynamodb create-table \
+              --table-name shipments \
+              --attribute-definitions AttributeName=orderId,AttributeType=S \
+              --key-schema AttributeName=orderId,KeyType=HASH \
+              --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+              --endpoint-url http://dynamodb:8000 \
+              --region us-west-2 || echo "Table 'shipments' may already exist"
+            
+            aws dynamodb create-table \
+              --table-name inventory \
+              --attribute-definitions AttributeName=productId,AttributeType=S \
+              --key-schema AttributeName=productId,KeyType=HASH \
+              --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+              --endpoint-url http://dynamodb:8000 \
+              --region us-west-2 || echo "Table 'inventory' may already exist"
+            
+            aws dynamodb create-table \
+              --table-name error_reports \
+              --attribute-definitions AttributeName=reportId,AttributeType=S \
+              --key-schema AttributeName=reportId,KeyType=HASH \
+              --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+              --endpoint-url http://dynamodb:8000 \
+              --region us-west-2 || echo "Table 'error_reports' may already exist"
+            
+            echo "Seeding inventory..."
+            aws dynamodb put-item \
+              --table-name inventory \
+              --item '{"productId":{"S":"small-box"},"name":{"S":"Small box"},"stock":{"N":"500"},"reserved":{"N":"0"}}' \
+              --endpoint-url http://dynamodb:8000 \
+              --region us-west-2
+            
+            aws dynamodb put-item \
+              --table-name inventory \
+              --item '{"productId":{"S":"medium-box"},"name":{"S":"Medium box"},"stock":{"N":"0"},"reserved":{"N":"0"}}' \
+              --endpoint-url http://dynamodb:8000 \
+              --region us-west-2
+            
+            aws dynamodb put-item \
+              --table-name inventory \
+              --item '{"productId":{"S":"large-box"},"name":{"S":"Large box"},"stock":{"N":"300"},"reserved":{"N":"0"}}' \
+              --endpoint-url http://dynamodb:8000 \
+              --region us-west-2
+            
+            aws dynamodb put-item \
+              --table-name inventory \
+              --item '{"productId":{"S":"xl-box"},"name":{"S":"XL box"},"stock":{"N":"150"},"reserved":{"N":"0"}}' \
+              --endpoint-url http://dynamodb:8000 \
+              --region us-west-2
+            
+            echo "✓ Initialization complete!"
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          value: "dummy"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "dummy"
