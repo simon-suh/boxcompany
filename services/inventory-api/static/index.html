@@ -354,7 +354,7 @@ async function submitUpdate() {
     succ.classList.add('show');
 
     await loadInventory();
-setInterval(loadInventory, 5000);
+
     setTimeout(closeUpdate, 2500);
 
   } catch(e) {
@@ -389,7 +389,8 @@ function renderLog() {
 }
 
 loadInventory();
-setInterval(loadInventory, 5000);
+setInterval(loadInventory, 3000);
+
 </script>
 </body>
 </html>

@@ -470,7 +470,7 @@ function toggleReport() {
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } else {
     // Resume auto-refresh when panel closes
-    refreshInterval = setInterval(loadOrders, 15000);
+    refreshInterval = setInterval(loadOrders, 3000);
   }
 }
 
@@ -525,7 +525,7 @@ async function submitReport() {
 
 // Initialize
 loadOrders();
-refreshInterval = setInterval(loadOrders, 15000);
+refreshInterval = setInterval(loadOrders, 3000);
 
 </script>
 </body>

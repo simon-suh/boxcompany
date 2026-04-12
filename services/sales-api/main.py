@@ -12,6 +12,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from database import get_db, Customer, Order, OrderItem, ErrorReport
+from kafka_consumer import start_consumer
 from kafka_producer import publish_order_created, publish_error_reported
 
 app = FastAPI(
@@ -35,6 +36,13 @@ app.add_middleware(
 
 SCENARIO = int(os.getenv("SCENARIO", "1"))
 INVENTORY_API_URL = os.getenv("INVENTORY_API_URL", "http://inventory-api:3003")
+
+# ── Start Kafka consumer on app startup ──────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    start_consumer()
+    print(f"[Startup] Sales API running — Scenario {SCENARIO}")
+
 
 
 class OrderItemRequest(BaseModel):
