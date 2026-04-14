@@ -99,7 +99,7 @@ echo -e "\n${YELLOW}═══ Step 6: ArgoCD ═══${NC}"
 if kubectl get deployment argocd-server -n argocd &>/dev/null; then
     echo -e "${GREEN}✓ ArgoCD already installed${NC}"
 else
-    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --server-side
     echo "Waiting for ArgoCD to be ready..."
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
     echo -e "${GREEN}✓ ArgoCD installed${NC}"
