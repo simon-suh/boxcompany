@@ -1,0 +1,54 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# BoxCo Ingress
+# Routes all frontend APIs through stable hostnames
+# Eliminates port-forward race conditions with Argo CD
+# ═══════════════════════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: boxco-ingress
+  namespace: boxco
+  labels:
+    app: boxco
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+spec:
+  ingressClassName: nginx
+  rules:
+    # Sales API - http://sales.boxco.local
+    - host: sales.boxco.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sales-api
+                port:
+                  number: 3001
+
+    # Shipment API - http://shipment.boxco.local
+    - host: shipment.boxco.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: shipment-api
+                port:
+                  number: 3002
+
+    # Inventory API - http://inventory.boxco.local
+    - host: inventory.boxco.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: inventory-api
+                port:
+                  number: 3003

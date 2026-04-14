@@ -40,9 +40,23 @@ fi
 eval $(minikube docker-env)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 2: Create Namespaces
+# Step 2: Enable Ingress Addon
 # ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Step 2: Namespaces ═══${NC}"
+echo -e "\n${YELLOW}═══ Step 2: Ingress Controller ═══${NC}"
+if minikube addons list | grep -q "ingress.*enabled"; then
+    echo -e "${GREEN}✓ Ingress addon already enabled${NC}"
+else
+    echo "Enabling ingress addon..."
+    minikube addons enable ingress
+    echo "Waiting for ingress controller to be ready..."
+    kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=controller -n ingress-nginx --timeout=120s
+    echo -e "${GREEN}✓ Ingress controller ready${NC}"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Step 3: Create Namespaces
+# ═══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${YELLOW}═══ Step 3: Namespaces ═══${NC}"
 kubectl create namespace boxco --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
@@ -50,18 +64,18 @@ kubectl create namespace registry --dry-run=client -o yaml | kubectl apply -f -
 echo -e "${GREEN}✓ Namespaces created${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 3: Setup Local Registry
+# Step 4: Setup Local Registry
 # ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Step 3: Local Registry ═══${NC}"
+echo -e "\n${YELLOW}═══ Step 4: Local Registry ═══${NC}"
 kubectl apply -f k8s/registry/
 echo "Waiting for registry to be ready..."
 kubectl wait --for=condition=ready pod -l app=registry -n registry --timeout=120s
 echo -e "${GREEN}✓ Registry ready${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 4: Install Prometheus & Grafana
+# Step 5: Install Prometheus & Grafana
 # ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Step 4: Prometheus & Grafana ═══${NC}"
+echo -e "\n${YELLOW}═══ Step 5: Prometheus & Grafana ═══${NC}"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
 helm repo update
 
@@ -79,9 +93,9 @@ fi
 kubectl apply -f k8s/observability/
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 5: Install ArgoCD
+# Step 6: Install ArgoCD
 # ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Step 5: ArgoCD ═══${NC}"
+echo -e "\n${YELLOW}═══ Step 6: ArgoCD ═══${NC}"
 if kubectl get deployment argocd-server -n argocd &>/dev/null; then
     echo -e "${GREEN}✓ ArgoCD already installed${NC}"
 else
@@ -91,13 +105,10 @@ else
     echo -e "${GREEN}✓ ArgoCD installed${NC}"
 fi
 
-# Disable ArgoCD auto-sync (we use it as dashboard only)
-kubectl patch application boxco-services -n argocd --type=merge -p '{"spec":{"syncPolicy":null}}' 2>/dev/null || true
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 6: Deploy Infrastructure (Databases, Kafka)
+# Step 7: Deploy Infrastructure (Databases, Kafka)
 # ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Step 6: Infrastructure ═══${NC}"
+echo -e "\n${YELLOW}═══ Step 7: Infrastructure ═══${NC}"
 
 # Apply config first (postgres init script)
 kubectl apply -f k8s/config/
@@ -126,18 +137,36 @@ kubectl wait --for=condition=complete job/dynamodb-init -n boxco --timeout=180s
 echo -e "${GREEN}✓ DynamoDB initialized${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Step 7: Start Port Forwards
+# Step 8: Configure /etc/hosts for Ingress
 # ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Step 7: Port Forwards ═══${NC}"
+echo -e "\n${YELLOW}═══ Step 8: Configure Local DNS ═══${NC}"
+MINIKUBE_IP=$(minikube ip)
+HOSTS_ENTRY="${MINIKUBE_IP}  sales.boxco.local shipment.boxco.local inventory.boxco.local"
 
-# Kill any existing port forwards
+if grep -q "boxco.local" /etc/hosts; then
+    echo -e "${YELLOW}⚠ boxco.local entries exist in /etc/hosts${NC}"
+    echo -e "  Current minikube IP: ${MINIKUBE_IP}"
+    echo -e "  Please verify the IP is correct, or run:"
+    echo -e "  ${BLUE}sudo sed -i '/boxco.local/d' /etc/hosts && echo '${HOSTS_ENTRY}' | sudo tee -a /etc/hosts${NC}"
+else
+    echo -e "${YELLOW}Adding hostnames to /etc/hosts (requires sudo)...${NC}"
+    echo "${HOSTS_ENTRY}" | sudo tee -a /etc/hosts > /dev/null
+    echo -e "${GREEN}✓ Hosts configured${NC}"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Step 9: Start Port Forwards (Infrastructure Only)
+# ═══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${YELLOW}═══ Step 9: Port Forwards (Infrastructure) ═══${NC}"
+
+# Kill any existing port forwards for infrastructure
 pkill -f "port-forward.*5000" || true
 pkill -f "port-forward.*3000" || true
 pkill -f "port-forward.*9090" || true
 pkill -f "port-forward.*8081" || true
 sleep 2
 
-# Start port forwards with nohup
+# Start port forwards with nohup (infrastructure only - APIs use Ingress now)
 nohup kubectl port-forward -n registry svc/registry 5000:5000 > /dev/null 2>&1 &
 nohup kubectl port-forward -n observability svc/prometheus-grafana 3000:80 > /dev/null 2>&1 &
 nohup kubectl port-forward -n observability svc/prometheus-kube-prometheus-prometheus 9090:9090 > /dev/null 2>&1 &
@@ -162,6 +191,10 @@ if [ -n "$ARGOCD_PASS" ]; then
     echo -e "              (admin/${ARGOCD_PASS})"
 fi
 
+echo -e "\n${BLUE}BoxCo APIs (via Ingress - no port-forward needed!):${NC}"
+echo -e "  Sales:      http://sales.boxco.local"
+echo -e "  Shipment:   http://shipment.boxco.local"
+echo -e "  Inventory:  http://inventory.boxco.local"
 
 echo ""
 if [[ "$AUTO_YES" == true ]]; then
@@ -181,9 +214,9 @@ if [[ "$BUILD_IMAGES" =~ ^[Yy]$ ]]; then
     echo -e "${GREEN}║          ✅ Ready to Demo!                                 ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
     echo -e "\n${BLUE}Open browser tabs:${NC}"
-    echo -e "  - http://localhost:3001 (Sales)"
-    echo -e "  - http://localhost:3002 (Shipment)"
-    echo -e "  - http://localhost:3003 (Inventory)"
+    echo -e "  - http://sales.boxco.local (Sales)"
+    echo -e "  - http://shipment.boxco.local (Shipment)"
+    echo -e "  - http://inventory.boxco.local (Inventory)"
     echo -e "  - http://localhost:3000 (Grafana)"
     echo -e "\n${BLUE}Run the demo:${NC}"
     echo -e "  ${YELLOW}./scripts/demo-run.sh${NC}        # Scenario 1"
