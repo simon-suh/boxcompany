@@ -32,7 +32,7 @@ if minikube status | grep -q "Running"; then
     echo -e "${GREEN}✓ Minikube already running${NC}"
 else
     echo "Starting Minikube..."
-    minikube start --memory=4096 --cpus=2
+    minikube start --memory=8192 --cpus=3 --insecure-registry="192.168.49.0/24"
     echo -e "${GREEN}✓ Minikube started${NC}"
 fi
 
