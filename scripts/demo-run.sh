@@ -1,11 +1,16 @@
 #!/bin/bash
+# ═══════════════════════════════════════════════════════════════════════════════
 # BoxCo Fast Demo Script (uses pre-built images)
 # Usage:
-#   ./scripts/demo.sh      - Deploy scenario-1 (initial setup)
-#   ./scripts/demo.sh 2    - Magic Moment 1: Deploy scenario-2 (bug fix)
-#   ./scripts/demo.sh 3    - Magic Moment 2: Deploy scenario-3 (XL boxes)
+#   ./scripts/demo-run.sh      - Deploy scenario-1 (initial setup)
+#   ./scripts/demo-run.sh 2    - Magic Moment 1: Deploy scenario-2 (bug fix)
+#   ./scripts/demo-run.sh 3    - Magic Moment 2: Deploy scenario-3 (XL boxes)
 #
-# Prerequisites: Run ./scripts/setup-images.sh first to pre-build images
+# Prerequisites: Run ./scripts/demo-setup.sh first to pre-build images
+#
+# NOTE: This script uses Ingress for stable API access - no port-forwards needed!
+#       Argo CD auto-sync is ENABLED - true GitOps workflow.
+# ═══════════════════════════════════════════════════════════════════════════════
 set -e
 
 RED='\033[0;31m'
@@ -15,9 +20,6 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 SCENARIO=${1:-1}
-
-# Temporarily disable ArgoCD auto-sync to prevent race condition
-kubectl patch application boxco-services -n argocd --type=merge -p '{"spec":{"syncPolicy":null}}' 2>/dev/null || true
 
 MINIKUBE_IP=$(minikube ip)
 REGISTRY="${MINIKUBE_IP}:30500"
@@ -44,7 +46,7 @@ case $SCENARIO in
     echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
     ;;
   *)
-    echo -e "${RED}Usage: ./scripts/demo.sh [1|2|3]${NC}"
+    echo -e "${RED}Usage: ./scripts/demo-run.sh [1|2|3]${NC}"
     echo "  1 - Deploy scenario-1 (default)"
     echo "  2 - Deploy scenario-2 (bug fix)"
     echo "  3 - Deploy scenario-3 (XL boxes)"
@@ -67,11 +69,21 @@ for svc in "${SERVICES[@]}"; do
 done
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Apply Manifests
+# Apply Manifests (including Ingress)
 # ═══════════════════════════════════════════════════════════════════════════════
 echo -e "\n${YELLOW}═══ Applying Manifests ═══${NC}"
 kubectl apply -f k8s/services/
-echo -e "${GREEN}✓ Manifests applied${NC}"
+echo -e "${GREEN}✓ Manifests applied (including Ingress)${NC}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Force Pods to Restart (ensures fresh images are pulled)
+# ═══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${YELLOW}═══ Restarting Services ═══${NC}"
+kubectl rollout restart deployment/sales-api -n boxco
+kubectl rollout restart deployment/inventory-api -n boxco
+kubectl rollout restart deployment/shipment-api -n boxco
+kubectl rollout restart deployment/notification-service -n boxco
+echo -e "${GREEN}✓ Rollout restart triggered${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Wait for Deployments
@@ -81,31 +93,49 @@ kubectl rollout status deployment/sales-api -n boxco --timeout=60s
 kubectl rollout status deployment/inventory-api -n boxco --timeout=60s
 kubectl rollout status deployment/shipment-api -n boxco --timeout=60s
 kubectl rollout status deployment/notification-service -n boxco --timeout=60s
-
-# Wait for pods to stabilize (30s)
-echo -e "${BLUE}Waiting for pods to stabilize (30s)...${NC}"
-sleep 30
+echo -e "${GREEN}✓ All deployments ready${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Port Forwards
+# Verify Ingress is Ready
 # ═══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${YELLOW}═══ Setting Up Port Forwards ═══${NC}"
-pkill -f "port-forward.*3001" || true
-pkill -f "port-forward.*3002" || true
-pkill -f "port-forward.*3003" || true
-sleep 5
+echo -e "\n${YELLOW}═══ Verifying Ingress ═══${NC}"
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=controller -n ingress-nginx --timeout=60s
+echo -e "${GREEN}✓ Ingress controller ready${NC}"
 
-# Verify pods are running
-echo -e "${BLUE}Verifying pods are ready...${NC}"
-kubectl wait --for=condition=ready pod -l app=sales-api -n boxco --timeout=60s
-kubectl wait --for=condition=ready pod -l app=inventory-api -n boxco --timeout=60s
-kubectl wait --for=condition=ready pod -l app=shipment-api -n boxco --timeout=60s
+# Verify Ingress resource exists
+if kubectl get ingress boxco-ingress -n boxco &>/dev/null; then
+    echo -e "${GREEN}✓ BoxCo Ingress configured${NC}"
+else
+    echo -e "${RED}✗ Ingress not found - applying now...${NC}"
+    kubectl apply -f k8s/services/ingress.yaml
+fi
 
-kubectl port-forward -n boxco svc/sales-api 3001:3001 &
-kubectl port-forward -n boxco svc/inventory-api 3003:3003 &
-kubectl port-forward -n boxco svc/shipment-api 3002:3002 &
-sleep 5
-echo -e "${GREEN}✓ Port forwards ready${NC}"
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ensure Ingress Port-Forward is Running (for WSL2 compatibility)
+# ═══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${YELLOW}═══ Setting Up Ingress Access ═══${NC}"
+if ! pgrep -f "port-forward.*ingress-nginx.*8080" > /dev/null; then
+    echo "Starting Ingress port-forward..."
+    kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80 &
+    sleep 3
+fi
+echo -e "${GREEN}✓ Ingress accessible at localhost:8080${NC}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Enable Argo CD Auto-Sync (GitOps!)
+# ═══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${YELLOW}═══ Enabling Argo CD Auto-Sync ═══${NC}"
+kubectl patch application boxco-services -n argocd --type=merge -p '{
+  "spec": {
+    "syncPolicy": {
+      "automated": {
+        "prune": true,
+        "selfHeal": true
+      }
+    }
+  }
+}' 2>/dev/null || echo -e "${YELLOW}⚠ ArgoCD application not found (optional)${NC}"
+echo -e "${GREEN}✓ Argo CD auto-sync enabled${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Success Message
@@ -118,7 +148,7 @@ case $SCENARIO in
     echo -e "\n${BLUE}Current State:${NC}"
     echo "  • Background: White"
     echo "  • Bug: Out-of-stock orders ARE allowed (medium box)"
-    echo -e "\n${YELLOW}Next: Run ./scripts/demo.sh 2 for Magic Moment 1${NC}"
+    echo -e "\n${YELLOW}Next: Run ./scripts/demo-run.sh 2 for Magic Moment 1${NC}"
     ;;
   2)
     echo -e "${GREEN}║     ✅ Scenario 2 Deployed!                                ║${NC}"
@@ -127,7 +157,7 @@ case $SCENARIO in
     echo "  • Background: White → Gradient"
     echo "  • Tag: Scenario 1 → Scenario 2"
     echo "  • Bug fixed: Out-of-stock orders now BLOCKED"
-    echo -e "\n${YELLOW}Next: Run ./scripts/demo.sh 3 for Magic Moment 2${NC}"
+    echo -e "\n${YELLOW}Next: Run ./scripts/demo-run.sh 3 for Magic Moment 2${NC}"
     ;;
   3)
     echo -e "${GREEN}║     ✅ Scenario 3 Deployed!                                ║${NC}"
@@ -139,9 +169,13 @@ case $SCENARIO in
     ;;
 esac
 
-echo -e "\n${BLUE}View your app:${NC}"
-echo "  Sales Portal:     http://localhost:3001"
-echo "  Inventory Portal: http://localhost:3003"
-echo "  Shipment Portal:  http://localhost:3002"
+echo -e "\n${BLUE}View your app (via Ingress - stable, no port-forwards!):${NC}"
+echo "  Sales Portal:     http://sales.boxco.local:8080"
+echo "  Shipment Portal:  http://shipment.boxco.local:8080"
+echo "  Inventory Portal: http://inventory.boxco.local:8080"
+echo ""
+echo -e "${BLUE}Infrastructure:${NC}"
 echo "  ArgoCD:           http://localhost:8081"
 echo "  Grafana:          http://localhost:3000"
+echo ""
+echo -e "${GREEN}✨ Argo CD auto-sync is ON - pods can restart without breaking access!${NC}"
