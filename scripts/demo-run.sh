@@ -76,6 +76,16 @@ kubectl apply -f k8s/services/
 echo -e "${GREEN}✓ Manifests applied (including Ingress)${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Force Pods to Restart (ensures fresh images are pulled)
+# ═══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${YELLOW}═══ Restarting Services ═══${NC}"
+kubectl rollout restart deployment/sales-api -n boxco
+kubectl rollout restart deployment/inventory-api -n boxco
+kubectl rollout restart deployment/shipment-api -n boxco
+kubectl rollout restart deployment/notification-service -n boxco
+echo -e "${GREEN}✓ Rollout restart triggered${NC}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Wait for Deployments
 # ═══════════════════════════════════════════════════════════════════════════════
 echo -e "\n${YELLOW}═══ Waiting for Deployments ═══${NC}"
@@ -99,6 +109,17 @@ else
     echo -e "${RED}✗ Ingress not found - applying now...${NC}"
     kubectl apply -f k8s/services/ingress.yaml
 fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ensure Ingress Port-Forward is Running (for WSL2 compatibility)
+# ═══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${YELLOW}═══ Setting Up Ingress Access ═══${NC}"
+if ! pgrep -f "port-forward.*ingress-nginx.*8080" > /dev/null; then
+    echo "Starting Ingress port-forward..."
+    kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80 &
+    sleep 3
+fi
+echo -e "${GREEN}✓ Ingress accessible at localhost:8080${NC}"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Enable Argo CD Auto-Sync (GitOps!)
@@ -149,9 +170,9 @@ case $SCENARIO in
 esac
 
 echo -e "\n${BLUE}View your app (via Ingress - stable, no port-forwards!):${NC}"
-echo "  Sales Portal:     http://sales.boxco.local"
-echo "  Shipment Portal:  http://shipment.boxco.local"
-echo "  Inventory Portal: http://inventory.boxco.local"
+echo "  Sales Portal:     http://sales.boxco.local:8080"
+echo "  Shipment Portal:  http://shipment.boxco.local:8080"
+echo "  Inventory Portal: http://inventory.boxco.local:8080"
 echo ""
 echo -e "${BLUE}Infrastructure:${NC}"
 echo "  ArgoCD:           http://localhost:8081"
