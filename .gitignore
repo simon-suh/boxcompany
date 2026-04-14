@@ -7,4 +7,4 @@ venv/
 *.egg-info/
 .DS_Store
 *.db
-.pytest_cache/
+.pytest_cache/credentials.txt
