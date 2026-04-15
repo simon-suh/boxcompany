@@ -2,7 +2,7 @@
 
 A portfolio project demonstrating event-driven microservices architecture using real infrastructure tooling. Built to show three internal teams (Sales, Shipment, and Inventory) communicating through a shared Kafka event backbone rather than calling each other's services or databases directly. The system includes three deployment scenarios that demonstrate bug introduction, fix, and feature rollout, deployed via automation scripts with a GitOps pipeline scaffolded for future implementation.
 
-**Run locally with Docker Compose or explore the full Kubernetes stack with observability and ArgoCD dashboard.**
+**Run locally with Docker Compose (Option 1) or explore the full Kubernetes stack with observability and observability (Option 2).**
 
 ---
 
@@ -11,8 +11,8 @@ A portfolio project demonstrating event-driven microservices architecture using 
 ### Prerequisites
 
 This project supports two deployment modes:
-- **Docker Compose**: Quick local setup (~5 min)
-- **Kubernetes**: Full stack with CI/CD and observability (~25 min)
+- **Option 1: Docker Compose** for quick local setup (~5 min)
+- **Option 2: Kubernetes** for full stack with CI/CD and observability (~25 min)
 
 **Required for both options:**
 - Git
@@ -26,8 +26,18 @@ This project supports two deployment modes:
 <details>
 <summary><b>Install prerequisites (click to expand)</b></summary>
 
-**Docker Desktop:**
+#### For Docker Compose (Option 1)
+
+**Docker Desktop** (includes Docker Engine and Compose):
 - [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)
+
+That's it — you're ready for Option 1.
+
+---
+
+#### For Kubernetes Demo (Option 2)
+
+You'll need Docker Desktop plus the following:
 
 **Minikube:**
 ```bash
@@ -97,7 +107,7 @@ docker compose up --build
 | Sales | http://localhost:3001 | Place orders, view order history |
 | Shipment | http://localhost:3002 | View incoming orders, add tracking |
 | Inventory | http://localhost:3003 | View/update stock levels |
-| Grafana | http://localhost:3000 | Metrics dashboard (auto-loads, admin/admin) |
+| Grafana | http://localhost:3000 | Metrics dashboard (admin/admin) |
 | Kafka UI | http://localhost:8080 | View Kafka topics and messages |
 
 **Test the event flow:**
@@ -148,15 +158,23 @@ Or run interactively (prompts at each step):
 ./scripts/full-stack-setup.sh
 ```
 
+**WSL2 Users:** After setup completes, add these entries to your Windows hosts file.  
+Run in PowerShell as Administrator:
+```powershell
+Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 sales.boxco.local shipment.boxco.local inventory.boxco.local"
+```
+
 **Access the portals:**
-| Portal | URL | Description |
+| Portal | URL | Credentials |
 |--------|-----|-------------|
-| Sales | http://localhost:3001 | Place orders, view order history |
-| Shipment | http://localhost:3002 | View incoming orders, add tracking |
-| Inventory | http://localhost:3003 | View/update stock levels |
-| Grafana | http://localhost:3000 | Metrics dashboard (auto-loads, admin/admin) |
-| Prometheus | http://localhost:9090 | Raw metrics queries |
-| ArgoCD | http://localhost:8081 | Deployment dashboard (admin/see terminal) |
+| Sales | http://sales.boxco.local:8080 | — |
+| Shipment | http://shipment.boxco.local:8080 | — |
+| Inventory | http://inventory.boxco.local:8080 | — |
+| Grafana | http://localhost:3000 | admin / admin |
+| Prometheus | http://localhost:9090 | — |
+| ArgoCD | http://localhost:8081 | admin / see `credentials.txt` |
+
+> **Note:** `credentials.txt` is auto-generated in your project root by `full-stack-setup.sh`. It contains the ArgoCD admin password and all access URLs.
 
 **Run the demo:**
 ```bash
@@ -174,14 +192,17 @@ Or run interactively (prompts at each step):
 <details>
 <summary><b>What does full-stack-setup.sh do?</b></summary>
 
-1. Starts Minikube (if not running)
-2. Creates namespaces (boxco, observability, argocd, registry)
-3. Sets up local Docker registry
-4. Installs Prometheus & Grafana via Helm
-5. Installs ArgoCD (dashboard mode)
-6. Deploys infrastructure (Postgres, DynamoDB, Kafka, Zookeeper)
-7. Starts port forwards
-8. Optionally builds scenario images and deploys scenario 1
+1. Starts Minikube with 8GB RAM, 3 CPUs, insecure registry configured
+2. Enables NGINX Ingress Controller addon
+3. Creates namespaces (boxco, observability, argocd, registry)
+4. Sets up local Docker registry
+5. Installs Prometheus & Grafana via Helm
+6. Installs ArgoCD (dashboard mode)
+7. Deploys infrastructure (Postgres, DynamoDB, Kafka, Zookeeper)
+8. Applies Ingress routes for BoxCo services
+9. Starts port forwards
+10. Generates `credentials.txt` with all passwords and URLs
+11. Optionally builds scenario images and deploys scenario 1
 
 </details>
 
@@ -202,8 +223,9 @@ Or run interactively (prompts at each step):
 1. Updates manifest image tags to selected scenario
 2. Updates SCENARIO env var in manifests
 3. Applies manifests to Kubernetes
-4. Waits for pods to be ready
-5. Restarts port forwards
+4. Triggers rollout restart for all deployments (ensures fresh images)
+5. Waits for pods to be ready
+6. Re-enables ArgoCD auto-sync
 
 </details>
 
@@ -256,7 +278,7 @@ Or run interactively (prompts at each step):
 
 ### Grafana Dashboard
 
-The **BoxCo Services Overview** dashboard automatically loads at http://localhost:3000 (login: admin/admin) and provides real-time visibility into business and infrastructure metrics.
+Access Grafana at http://localhost:3000 (login: admin/admin).
 
 **Business Metrics:**
 - Stock Validation Errors: demonstrates the scenario-1 bug
@@ -267,6 +289,8 @@ The **BoxCo Services Overview** dashboard automatically loads at http://localhos
 - Service Status: health check for all microservices
 - CPU Usage: per service
 - Memory Usage: per service
+
+> **Note:** The Kubernetes deployment currently uses default Grafana dashboards. A custom BoxCo dashboard ConfigMap is planned but not yet implemented.
 
 <details>
 <summary><b>Custom Prometheus Metrics</b></summary>
@@ -298,17 +322,17 @@ Prometheus scrapes every 2 seconds.
 
 ## CI/CD Pipeline
 
-**Current State:** Demo scripts handle deployments. ArgoCD is installed as a visualization dashboard only.
+**Current State:** Demo scripts handle deployments. ArgoCD is installed as a deployment dashboard.
 
 **What works today:**
 - ✅ Local Docker registry (deployed by `full-stack-setup.sh`)
 - ✅ Pre-built scenario images via `demo-setup.sh`
 - ✅ One-command scenario switching via `demo-run.sh`
-- ✅ ArgoCD dashboard shows deployment status (manual sync only)
+- ✅ ArgoCD dashboard shows deployment status (auto-sync enabled by `demo-run.sh`)
+- ✅ NGINX Ingress Controller routes traffic to services
 - ✅ Prometheus/Grafana validates changes with real metrics
 
 **What's scaffolded (ready but not active):**
-- 📝 ArgoCD Application manifests with auto-sync config (currently disabled)
 - 📝 Jenkins Kubernetes manifests (not deployed)
 - 📝 Jenkinsfile pipeline structure (stages are stubs)
 - 📝 Jenkins Configuration as Code (complete but unused)
@@ -320,8 +344,7 @@ To enable the full pipeline, the following would need to be completed:
 
 1. **Jenkins deployment**: Apply `jenkins/k8s/` manifests
 2. **Jenkinsfile implementation**: Replace echo stubs with actual docker build/push commands
-3. **ArgoCD auto-sync**: Remove the `syncPolicy: null` patch in setup script
-4. **Webhook integration**: Connect GitHub → Jenkins → ArgoCD
+3. **Webhook integration**: Connect GitHub → Jenkins → ArgoCD
 
 
 ```text
@@ -411,7 +434,8 @@ boxcompany/
 │   │   ├── sales-api.yaml
 │   │   ├── inventory-api.yaml
 │   │   ├── shipment-api.yaml
-│   │   └── notification-service.yaml
+│   │   ├── notification-service.yaml
+│   │   └── ingress.yaml             # NGINX Ingress routes
 │   ├── registry/
 │   │   └── registry.yaml            # Local Docker registry
 │   └── observability/
@@ -427,12 +451,12 @@ boxcompany/
 │       ├── pvc.yaml
 │       └── rbac.yaml
 │
-└── argo/                            # GitOps with ArgoCD (dashboard only)
+└── argo/                            # GitOps with ArgoCD
     ├── namespace.yaml
     ├── project.yaml
     └── applications/
-        ├── boxco-infrastructure.yaml  # Scaffolded, auto-sync disabled
-        └── boxco-services.yaml        # Scaffolded, auto-sync disabled
+        ├── boxco-infrastructure.yaml
+        └── boxco-services.yaml
 ```
 
 </details>
@@ -462,6 +486,9 @@ boxcompany/
 - Kubernetes (Minikube) - Container orchestration
 - Helm 3.x - Kubernetes package manager
 
+**Networking**
+- NGINX Ingress Controller - Routes external traffic to services via hostnames
+
 **Observability**
 - Prometheus - Metrics collection (2s scrape interval)
 - Grafana - Dashboards and visualization
@@ -470,7 +497,7 @@ boxcompany/
 **CI/CD**
 - Shell Scripts - Current deployment automation
 - Local Docker Registry - Image storage for K8s deployments
-- Argo CD - Deployment dashboard (GitOps manifests scaffolded)
+- Argo CD - Deployment dashboard with auto-sync (enabled by `demo-run.sh`)
 - Jenkins - Scaffolded, not deployed
 
 **Frontend**
