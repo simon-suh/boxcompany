@@ -146,7 +146,7 @@ spec:
                                 MANIFEST="k8s/services/\${svc}.yaml"
 
                                 sed -i "s|image: .*/${svc}:.*|image: ${env.REGISTRY}/\${svc}:${IMAGE_TAG}|g" "\${MANIFEST}"
-                                sed -i 's|value: "[0-9]"|value: "${SCENARIO_NUM}"|g' "\${MANIFEST}"
+                                sed -i "s|value: \\\"[0-9]\\\"|value: \\\"${SCENARIO_NUM}\\\"|g" "\${MANIFEST}"
 
                                 echo "  ✓ \${svc}: image=${IMAGE_TAG}, scenario=${SCENARIO_NUM}"
                             done
