@@ -9,15 +9,12 @@ kind: ClusterRole
 metadata:
   name: jenkins
 rules:
-  # Pod management — needed to spawn and monitor agent pods
   - apiGroups: [""]
     resources: ["pods", "pods/exec", "pods/log"]
     verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
-  # Secrets — needed for credentials binding in pipelines
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list"]
-  # Events — used by the Kubernetes plugin for status reporting
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "watch"]

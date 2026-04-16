@@ -29,13 +29,11 @@ spec:
                 --url    "$SMEE_URL" \
                 --target "$TARGET_URL"
           env:
-            # Public smee.io channel — created by setup.sh and stored in ConfigMap
             - name: SMEE_URL
               valueFrom:
                 configMapKeyRef:
                   name: jenkins-smee
                   key: url
-            # Jenkins webhook endpoint inside the cluster
             - name: TARGET_URL
               value: "http://jenkins.jenkins.svc.cluster.local:8080/github-webhook/"
 
@@ -47,7 +45,6 @@ spec:
               memory: "128Mi"
               cpu: "100m"
 
-          # Restart immediately if the smee connection drops
           livenessProbe:
             exec:
               command: ["sh", "-c", "pgrep -f smee-client"]

@@ -5,12 +5,16 @@
 #
 # Credentials are NOT stored here — injected as env vars from the
 # jenkins-credentials Secret created by setup.sh.
+#
+# NOTE: Job creation is intentionally omitted from CasC.
+# The boxco-pipeline multibranch job is created manually via the UI on
+# first run, or auto-triggered via the GitHub webhook on first push.
 # ─────────────────────────────────────────────────────────────────────────────
 
 jenkins:
   systemMessage: "BoxCo CI/CD Pipeline — Managed by JCasC"
 
-  numExecutors: 0   # All builds run on ephemeral Kubernetes agent pods
+  numExecutors: 0
   mode: EXCLUSIVE
 
   securityRealm:
@@ -53,7 +57,6 @@ jenkins:
         podRetention: "never"
 
         templates:
-          # Lightweight agent for branch scans and non-build jobs
           - name: "default"
             label: "jenkins-agent"
             nodeUsageMode: NORMAL
@@ -64,9 +67,6 @@ jenkins:
                 ttyEnabled: true
                 command: ""
                 args: ""
-
-          # NOTE: The "boxco-builder" build pod (dind + builder) is defined
-          # inline in the Jenkinsfile so it is versioned alongside pipeline code.
 
 credentials:
   system:
@@ -81,39 +81,8 @@ credentials:
 
 unclassified:
   location:
-    url: "http://jenkins.jenkins.svc.cluster.local:8080"
+    url: "http://localhost:8082"
     adminAddress: "admin@boxcompany.local"
 
   gitHubConfiguration:
     apiRateLimitChecker: ThrottleForNormalize
-
-jobs:
-  - script: >
-      multibranchPipelineJob('boxco-pipeline') {
-        displayName('BoxCo Services Pipeline')
-        description('Builds all branches; updates main manifests; Argo CD deploys.')
-
-        branchSources {
-          github {
-            id('boxco-github')
-            repoOwner('simon-suh')
-            repository('boxcompany')
-            scanCredentialsId('github-credentials')
-            buildOriginBranch(true)
-            buildOriginBranchWithPR(false)
-            buildOriginPRMerge(false)
-          }
-        }
-
-        orphanedItemStrategy {
-          discardOldItems {
-            numToKeep(5)
-          }
-        }
-
-        triggers {
-          // Webhooks (via smee.io) are the primary trigger — instant on push.
-          // periodic() is a daily fallback in case a webhook is missed.
-          periodic(1440)
-        }
-      }

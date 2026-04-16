@@ -53,27 +53,39 @@ for cmd in minikube kubectl helm docker git curl; do
 done
 
 # ── Credentials ───────────────────────────────────────────────────────────────
-step "GitHub credentials for Jenkins"
-echo ""
-echo "Jenkins needs a GitHub Personal Access Token to:"
-echo "  • Check out branches and build Docker images"
-echo "  • Push updated image tags back to main (triggers Argo CD)"
-echo "  • Register a webhook on your repo (for instant build triggers)"
-echo ""
-echo "  Token requires: repo scope"
-echo "  Create one at: https://github.com/settings/tokens"
-echo ""
-
-if [[ "$AUTO_YES" == true ]]; then
-    : "${GITHUB_USERNAME:?Set GITHUB_USERNAME env var}"
-    : "${GITHUB_TOKEN:?Set GITHUB_TOKEN env var}"
-    JENKINS_ADMIN_PASS="${JENKINS_ADMIN_PASS:-admin}"
-    ok "Using credentials from environment"
+# Skip prompts entirely if the secret already exists (re-run scenario)
+if kubectl get secret jenkins-credentials -n jenkins &>/dev/null; then
+    ok "Jenkins credentials already set — skipping prompts"
+    # Read existing values for use in credentials.txt later
+    JENKINS_ADMIN_PASS=$(kubectl get secret jenkins-credentials -n jenkins \
+        -o jsonpath="{.data.admin-password}" | base64 -d)
+    GITHUB_USERNAME=$(kubectl get secret jenkins-credentials -n jenkins \
+        -o jsonpath="{.data.github-username}" | base64 -d)
+    GITHUB_TOKEN=$(kubectl get secret jenkins-credentials -n jenkins \
+        -o jsonpath="{.data.github-token}" | base64 -d)
 else
-    read -p  "  GitHub username  : " GITHUB_USERNAME
-    read -sp "  GitHub token     : " GITHUB_TOKEN; echo
-    read -sp "  Jenkins admin password (Enter for 'admin'): " JENKINS_ADMIN_PASS; echo
-    JENKINS_ADMIN_PASS="${JENKINS_ADMIN_PASS:-admin}"
+    step "GitHub credentials for Jenkins"
+    echo ""
+    echo "Jenkins needs a GitHub Personal Access Token to:"
+    echo "  • Check out branches and build Docker images"
+    echo "  • Push updated image tags back to main (triggers Argo CD)"
+    echo "  • Register a webhook on your repo (for instant build triggers)"
+    echo ""
+    echo "  Token requires: repo scope"
+    echo "  Create one at: https://github.com/settings/tokens"
+    echo ""
+
+    if [[ "$AUTO_YES" == true ]]; then
+        : "${GITHUB_USERNAME:?Set GITHUB_USERNAME env var}"
+        : "${GITHUB_TOKEN:?Set GITHUB_TOKEN env var}"
+        JENKINS_ADMIN_PASS="${JENKINS_ADMIN_PASS:-admin}"
+        ok "Using credentials from environment"
+    else
+        read -p  "  GitHub username  : " GITHUB_USERNAME
+        read -sp "  GitHub token     : " GITHUB_TOKEN; echo
+        read -sp "  Jenkins admin password (Enter for 'admin'): " JENKINS_ADMIN_PASS; echo
+        JENKINS_ADMIN_PASS="${JENKINS_ADMIN_PASS:-admin}"
+    fi
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -127,6 +139,7 @@ ok "Registry ready at ${MINIKUBE_IP}:30500"
 step "Step 5/12 — Prometheus + Grafana"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
 helm repo update 2>/dev/null || true
+echo "  Checking Prometheus installation..."
 
 if helm list -n observability | grep -q prometheus; then
     ok "Prometheus stack already installed"
@@ -153,7 +166,6 @@ else
     ok "Argo CD installed"
 fi
 
-# Register Argo CD Applications (boxco-infrastructure + boxco-services)
 kubectl apply -f argo/ > /dev/null
 kubectl apply -f argo/applications/ > /dev/null
 ok "Argo CD applications registered"
@@ -175,7 +187,9 @@ kubectl wait --for=condition=ready pod -l app=postgres -n boxco --timeout=120s
 kubectl wait --for=condition=ready pod -l app=dynamodb -n boxco --timeout=120s
 ok "Postgres + DynamoDB ready"
 
+# Delete and wait for full removal before recreating to avoid AlreadyExists error
 kubectl delete job dynamodb-init -n boxco --ignore-not-found > /dev/null
+kubectl wait --for=delete job/dynamodb-init -n boxco --timeout=30s 2>/dev/null || true
 kubectl apply -f k8s/databases/dynamodb-init-job.yaml > /dev/null
 kubectl wait --for=condition=complete job/dynamodb-init -n boxco --timeout=180s
 ok "DynamoDB initialized"
@@ -185,15 +199,19 @@ ok "DynamoDB initialized"
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 8/12 — Jenkins"
 
-# 8a. Credentials secret (never stored in git — created here from user input)
-kubectl create secret generic jenkins-credentials \
-    --namespace=jenkins \
-    --from-literal=admin-password="${JENKINS_ADMIN_PASS}" \
-    --from-literal=dev-password="developer" \
-    --from-literal=github-username="${GITHUB_USERNAME}" \
-    --from-literal=github-token="${GITHUB_TOKEN}" \
-    --dry-run=client -o yaml | kubectl apply -f - > /dev/null
-ok "Credentials secret created"
+# 8a. Credentials secret — only create if it doesn't exist
+if kubectl get secret jenkins-credentials -n jenkins &>/dev/null; then
+    ok "Credentials secret already exists"
+else
+    kubectl create secret generic jenkins-credentials \
+        --namespace=jenkins \
+        --from-literal=admin-password="${JENKINS_ADMIN_PASS}" \
+        --from-literal=dev-password="developer" \
+        --from-literal=github-username="${GITHUB_USERNAME}" \
+        --from-literal=github-token="${GITHUB_TOKEN}" \
+        --dry-run=client -o yaml | kubectl apply -f - > /dev/null
+    ok "Credentials secret created"
+fi
 
 # 8b. ConfigMaps from repo files
 kubectl create configmap jenkins-casc \
@@ -207,7 +225,7 @@ kubectl create configmap jenkins-plugins \
     --dry-run=client -o yaml | kubectl apply -f - > /dev/null
 ok "ConfigMaps created (CasC + plugins)"
 
-# 8c. Apply Jenkins manifests (smee.yaml applied after smee URL is known — Step 9)
+# 8c. Apply Jenkins manifests (smee.yaml applied after smee URL is known in Step 9)
 kubectl apply -f jenkins/k8s/namespace.yaml  > /dev/null
 kubectl apply -f jenkins/k8s/pvc.yaml        > /dev/null
 kubectl apply -f jenkins/k8s/rbac.yaml       > /dev/null
@@ -232,76 +250,68 @@ done
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 9 — Smee webhook bridge + GitHub webhook registration
 # ═════════════════════════════════════════════════════════════════════════════
-# Why smee?  Jenkins runs on localhost — GitHub can't reach it directly.
-# Smee.io (made by GitHub) provides a free public relay URL. The smee-client
-# pod inside your cluster forwards those events to Jenkins instantly.
-#
-# Result: git push → GitHub → smee.io → smee pod → Jenkins → build starts
-# ═════════════════════════════════════════════════════════════════════════════
 step "Step 9/12 — Webhook bridge (smee.io)"
 
-# 9a. Create a smee.io channel (one HTTP redirect → get the assigned URL)
-echo "  Creating smee.io channel..."
-SMEE_URL=$(curl -sI https://smee.io/new | grep -i ^location | awk '{print $2}' | tr -d '\r\n')
-
-if [[ -z "$SMEE_URL" ]]; then
-    warn "Could not reach smee.io — falling back to 1-minute polling for demo"
-    warn "Webhooks can be configured manually later"
-    SMEE_URL="https://smee.io/PLACEHOLDER"
+# Check if smee is already configured
+if kubectl get configmap jenkins-smee -n jenkins &>/dev/null; then
+    SMEE_URL=$(kubectl get configmap jenkins-smee -n jenkins \
+        -o jsonpath="{.data.url}")
+    ok "Smee already configured: ${SMEE_URL}"
 else
-    ok "Smee channel: ${SMEE_URL}"
+    echo "  Creating smee.io channel..."
+    SMEE_URL=$(curl -sI https://smee.io/new | grep -i ^location | awk '{print $2}' | tr -d '\r\n')
+
+    if [[ -z "$SMEE_URL" ]]; then
+        warn "Could not reach smee.io — falling back to polling"
+        SMEE_URL="https://smee.io/PLACEHOLDER"
+    else
+        ok "Smee channel: ${SMEE_URL}"
+    fi
+
+    kubectl create configmap jenkins-smee \
+        --namespace=jenkins \
+        --from-literal=url="${SMEE_URL}" \
+        --dry-run=client -o yaml | kubectl apply -f - > /dev/null
+    ok "Smee URL stored in ConfigMap"
+
+    # Register GitHub webhook
+    echo "  Registering GitHub webhook..."
+    WEBHOOK_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+        -X POST \
+        -H "Authorization: token ${GITHUB_TOKEN}" \
+        -H "Content-Type: application/json" \
+        "https://api.github.com/repos/${GITHUB_USERNAME}/boxcompany/hooks" \
+        -d "{
+            \"name\": \"web\",
+            \"active\": true,
+            \"events\": [\"push\"],
+            \"config\": {
+                \"url\": \"${SMEE_URL}\",
+                \"content_type\": \"json\"
+            }
+        }")
+
+    if [[ "$WEBHOOK_RESPONSE" == "201" ]]; then
+        ok "GitHub webhook registered → ${SMEE_URL}"
+    else
+        warn "GitHub webhook registration returned HTTP ${WEBHOOK_RESPONSE}"
+        warn "Add manually: GitHub repo → Settings → Webhooks → Add"
+        warn "  Payload URL : ${SMEE_URL}"
+        warn "  Content type: application/json"
+        warn "  Events      : Just the push event"
+    fi
 fi
 
-# 9b. Store the smee URL as a ConfigMap so the smee-client pod can read it
-kubectl create configmap jenkins-smee \
-    --namespace=jenkins \
-    --from-literal=url="${SMEE_URL}" \
-    --dry-run=client -o yaml | kubectl apply -f - > /dev/null
-ok "Smee URL stored in ConfigMap"
-
-# 9c. Deploy the smee-client pod (bridges smee.io → Jenkins inside cluster)
 kubectl apply -f jenkins/k8s/smee.yaml > /dev/null
 ok "Smee client pod deployed"
 
-# 9d. Register the webhook on your GitHub repo via API
-echo "  Registering GitHub webhook..."
-WEBHOOK_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-    -X POST \
-    -H "Authorization: token ${GITHUB_TOKEN}" \
-    -H "Content-Type: application/json" \
-    "https://api.github.com/repos/${GITHUB_USERNAME}/boxcompany/hooks" \
-    -d "{
-        \"name\": \"web\",
-        \"active\": true,
-        \"events\": [\"push\"],
-        \"config\": {
-            \"url\": \"${SMEE_URL}\",
-            \"content_type\": \"json\"
-        }
-    }")
-
-if [[ "$WEBHOOK_RESPONSE" == "201" ]]; then
-    ok "GitHub webhook registered → ${SMEE_URL}"
-else
-    warn "GitHub webhook registration returned HTTP ${WEBHOOK_RESPONSE}"
-    warn "You can add it manually: GitHub repo → Settings → Webhooks → Add"
-    warn "  Payload URL : ${SMEE_URL}"
-    warn "  Content type: application/json"
-    warn "  Events      : Just the push event"
-fi
-
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 10 — Pre-build scenario images via Jenkins
-# ═════════════════════════════════════════════════════════════════════════════
-# Trigger Jenkins builds for all 3 branches now so images are pre-loaded
-# into the registry. During the demo, Jenkins will detect the images already
-# exist and skip the Docker build — making scenario transitions ~30 seconds.
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 10/12 — Pre-building scenario images"
 echo "  Triggering Jenkins builds for all 3 branches in the background."
 echo "  (~15-20 min for first run — images cached in registry for demo)"
 
-# Temporary port-forward to hit Jenkins REST API
 kubectl port-forward -n jenkins svc/jenkins 18080:8080 > /dev/null 2>&1 &
 PF_PID=$!
 sleep 8
@@ -323,11 +333,10 @@ trigger_branch() {
     if [[ "$status" == "201" ]]; then
         ok "Build triggered: ${branch}"
     else
-        warn "Could not trigger ${branch} now (HTTP ${status}) — Jenkins will auto-build within 1 min"
+        warn "Could not trigger ${branch} (HTTP ${status}) — will auto-build within 1 min"
     fi
 }
 
-# Allow Jenkins time to scan the repo and discover branches
 echo "  Waiting for branch discovery..."
 sleep 30
 
@@ -337,8 +346,8 @@ done
 
 kill $PF_PID 2>/dev/null || true
 echo ""
-echo -e "  ${CYAN}Builds are running in the background.${NC}"
-echo -e "  ${CYAN}Monitor progress at http://localhost:8082 after port-forwards start.${NC}"
+echo -e "  ${CYAN}Builds running in the background.${NC}"
+echo -e "  ${CYAN}Monitor at http://localhost:8082 after port-forwards start.${NC}"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 11 — Port Forwards

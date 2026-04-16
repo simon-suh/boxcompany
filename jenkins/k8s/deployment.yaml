@@ -21,15 +21,16 @@ spec:
         runAsUser: 1000
 
       # ── Init container: installs plugins before Jenkins starts ──────────────
-      # Reads jenkins/plugins.txt from the jenkins-plugins ConfigMap.
-      # Installs into the shared PVC so the main container picks them up on boot.
       initContainers:
         - name: install-plugins
           image: jenkins/jenkins:lts
           command:
             - jenkins-plugin-cli
             - --plugin-file=/plugins/plugins.txt
-            - --plugins-dir=/var/jenkins_home/plugins
+            - --plugin-download-directory=/var/jenkins_home/plugins
+          env:
+            - name: JAVA_OPTS
+              value: "-Xmx512m"
           volumeMounts:
             - name: jenkins-home
               mountPath: /var/jenkins_home
@@ -37,10 +38,10 @@ spec:
               mountPath: /plugins
           resources:
             requests:
-              memory: "256Mi"
+              memory: "512Mi"
               cpu: "100m"
             limits:
-              memory: "512Mi"
+              memory: "1Gi"
               cpu: "500m"
 
       containers:
@@ -53,16 +54,10 @@ spec:
               containerPort: 50000
 
           env:
-            # Skip the setup wizard — CasC handles all configuration
             - name: JAVA_OPTS
               value: "-Djenkins.install.runSetupWizard=false"
-
-            # Tell JCasC where to find the config file (mounted from ConfigMap)
             - name: CASC_JENKINS_CONFIG
               value: /var/jenkins_casc/jenkins.yaml
-
-            # Credentials injected from the jenkins-credentials Secret
-            # (created by setup.sh — never committed to git)
             - name: JENKINS_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -120,11 +115,9 @@ spec:
         - name: jenkins-home
           persistentVolumeClaim:
             claimName: jenkins-home
-        # CasC config — sourced from jenkins/k8s/jenkins-casc.yaml via setup.sh
         - name: casc
           configMap:
             name: jenkins-casc
-        # Plugins list — sourced from jenkins/plugins.txt via setup.sh
         - name: plugins
           configMap:
             name: jenkins-plugins

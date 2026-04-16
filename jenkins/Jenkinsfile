@@ -33,7 +33,7 @@ spec:
     securityContext:
       privileged: true
     args:
-      - --insecure-registry=0.0.0.0/0    # allow local registry (demo env)
+      - --insecure-registry=0.0.0.0/0
     env:
     - name: DOCKER_TLS_CERTDIR
       value: ""
@@ -57,7 +57,6 @@ spec:
     }
 
     environment {
-        // Tag convention: main → scenario-1, others keep their branch name
         IMAGE_TAG    = "${BRANCH_NAME == 'main' ? 'scenario-1' : BRANCH_NAME}"
         SCENARIO_NUM = "${(BRANCH_NAME == 'main' ? 'scenario-1' : BRANCH_NAME).replace('scenario-', '')}"
         GIT_REPO     = 'https://github.com/simon-suh/boxcompany.git'
@@ -66,8 +65,6 @@ spec:
     stages {
 
         // ── Guard ─────────────────────────────────────────────────────────────
-        // Prevents a recursive loop when Jenkins commits manifest updates back
-        // to main. Any commit with [skip ci] in the message is ignored.
         stage('Check [skip ci]') {
             steps {
                 script {
@@ -81,9 +78,6 @@ spec:
         }
 
         // ── Setup ─────────────────────────────────────────────────────────────
-        // Resolve the registry address from the Kubernetes node IP at runtime.
-        // This means anyone who clones the repo gets the right address
-        // automatically — no manual minikube ip lookups.
         stage('Setup') {
             steps {
                 container('builder') {
@@ -102,14 +96,6 @@ spec:
         }
 
         // ── Build & Push ───────────────────────────────────────────────────────
-        // Smart build: checks if the image already exists in the registry.
-        //
-        //   EXISTS  →  skip build entirely (fast — ~5s per service)
-        //              This is the demo path: setup pre-built the images,
-        //              so scenario transitions are near-instant.
-        //
-        //   MISSING →  build from Dockerfile + push
-        //              This is the first-run / fresh-clone path.
         stage('Build & Push Images') {
             steps {
                 container('builder') {
@@ -127,7 +113,7 @@ spec:
                             if (exists == 'yes') {
                                 echo "✓ ${svc}:${IMAGE_TAG} already in registry — skipping build"
                             } else {
-                                echo ">>> Building ${imageRef} (not found in registry)"
+                                echo ">>> Building ${imageRef}"
                                 sh "docker build -t ${imageRef} services/${svc}"
                                 sh "docker push  ${imageRef}"
                                 echo "✓ ${svc}:${IMAGE_TAG} pushed"
@@ -139,12 +125,6 @@ spec:
         }
 
         // ── Update Manifests ───────────────────────────────────────────────────
-        // Always updates main branch regardless of which branch triggered the build.
-        // Argo CD watches main/k8s/services/ and auto-syncs on any change.
-        //
-        // Two fields are patched per manifest (mirrors what demo-run.sh did):
-        //   1. image:   registry/service:tag
-        //   2. SCENARIO env var value: "1" | "2" | "3"
         stage('Update Manifests → main') {
             steps {
                 container('builder') {
@@ -154,7 +134,6 @@ spec:
                         passwordVariable: 'GIT_TOKEN'
                     )]) {
                         sh """
-                            # Clone main — we always patch the live branch Argo CD watches
                             git clone --branch main --depth 1 \\
                                 https://\${GIT_USER}:\${GIT_TOKEN}@github.com/simon-suh/boxcompany.git \\
                                 manifest-repo
@@ -166,10 +145,7 @@ spec:
                             for svc in sales-api inventory-api shipment-api notification-service; do
                                 MANIFEST="k8s/services/\${svc}.yaml"
 
-                                # Patch image reference
                                 sed -i "s|image: .*/${svc}:.*|image: ${env.REGISTRY}/\${svc}:${IMAGE_TAG}|g" "\${MANIFEST}"
-
-                                # Patch SCENARIO env var  (matches value: "N" pattern in manifests)
                                 sed -i 's|value: "[0-9]"|value: "${SCENARIO_NUM}"|g' "\${MANIFEST}"
 
                                 echo "  ✓ \${svc}: image=${IMAGE_TAG}, scenario=${SCENARIO_NUM}"
