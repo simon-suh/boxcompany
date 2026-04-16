@@ -1,10 +1,22 @@
+# Environment
 .env
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments
 .venv/
 venv/
-*.egg-info/
+
+# OS
 .DS_Store
+
+# Databases
 *.db
-.pytest_cache/credentials.txt
+
+# Generated at runtime — contains secrets
+credentials.txt

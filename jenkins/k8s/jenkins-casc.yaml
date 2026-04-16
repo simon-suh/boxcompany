@@ -1,35 +1,39 @@
 # Jenkins Configuration as Code (JCasC)
-# Automates Jenkins configuration on startup
-# Mount this to /var/jenkins_config/jenkins.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Loaded at startup via CASC_JENKINS_CONFIG env var.
+# Mounted from the "jenkins-casc" ConfigMap (created by setup.sh).
+#
+# Credentials are NOT stored here — injected as env vars from the
+# jenkins-credentials Secret created by setup.sh.
+# ─────────────────────────────────────────────────────────────────────────────
 
 jenkins:
-  systemMessage: "BoxCo CI/CD Pipeline - Managed by JCasC"
-  
-  numExecutors: 0  # All builds run on Kubernetes agents
-  
+  systemMessage: "BoxCo CI/CD Pipeline — Managed by JCasC"
+
+  numExecutors: 0   # All builds run on ephemeral Kubernetes agent pods
   mode: EXCLUSIVE
-  
+
   securityRealm:
     local:
       allowsSignup: false
       users:
         - id: "admin"
-          password: "${JENKINS_ADMIN_PASSWORD:-admin}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
         - id: "developer"
-          password: "${JENKINS_DEV_PASSWORD:-developer}"
-  
+          password: "${JENKINS_DEV_PASSWORD}"
+
   authorizationStrategy:
     roleBased:
       roles:
         global:
           - name: "admin"
-            description: "Administrators"
+            description: "Full access"
             permissions:
               - "Overall/Administer"
             entries:
               - user: "admin"
           - name: "developer"
-            description: "Developers"
+            description: "Can trigger and view builds"
             permissions:
               - "Overall/Read"
               - "Job/Build"
@@ -47,8 +51,9 @@ jenkins:
         jenkinsTunnel: "jenkins.jenkins.svc.cluster.local:50000"
         containerCapStr: "10"
         podRetention: "never"
-        
+
         templates:
+          # Lightweight agent for branch scans and non-build jobs
           - name: "default"
             label: "jenkins-agent"
             nodeUsageMode: NORMAL
@@ -59,42 +64,26 @@ jenkins:
                 ttyEnabled: true
                 command: ""
                 args: ""
-            
-          - name: "docker"
-            label: "docker"
-            nodeUsageMode: EXCLUSIVE
-            containers:
-              - name: "docker"
-                image: "docker:24-dind"
-                privileged: true
-                workingDir: "/home/jenkins/agent"
-                ttyEnabled: true
-                envVars:
-                  - envVar:
-                      key: "DOCKER_TLS_CERTDIR"
-                      value: ""
-              - name: "jnlp"
-                image: "jenkins/inbound-agent:latest"
-                workingDir: "/home/jenkins/agent"
-                ttyEnabled: true
+
+          # NOTE: The "boxco-builder" build pod (dind + builder) is defined
+          # inline in the Jenkinsfile so it is versioned alongside pipeline code.
 
 credentials:
   system:
     domainCredentials:
       - credentials:
-          # GitHub credentials (update these!)
           - usernamePassword:
               scope: GLOBAL
               id: "github-credentials"
               username: "${GITHUB_USERNAME}"
               password: "${GITHUB_TOKEN}"
-              description: "GitHub credentials for BoxCo repo"
+              description: "GitHub — BoxCo repo (read + write for manifest updates)"
 
 unclassified:
   location:
-    url: "http://jenkins.jenkins.svc.cluster.local:8080/jenkins"
+    url: "http://jenkins.jenkins.svc.cluster.local:8080"
     adminAddress: "admin@boxcompany.local"
-  
+
   gitHubConfiguration:
     apiRateLimitChecker: ThrottleForNormalize
 
@@ -102,8 +91,8 @@ jobs:
   - script: >
       multibranchPipelineJob('boxco-pipeline') {
         displayName('BoxCo Services Pipeline')
-        description('CI/CD pipeline for BoxCo microservices')
-        
+        description('Builds all branches; updates main manifests; Argo CD deploys.')
+
         branchSources {
           github {
             id('boxco-github')
@@ -112,17 +101,19 @@ jobs:
             scanCredentialsId('github-credentials')
             buildOriginBranch(true)
             buildOriginBranchWithPR(false)
-            buildOriginPRMerge(true)
+            buildOriginPRMerge(false)
           }
         }
-        
+
         orphanedItemStrategy {
           discardOldItems {
             numToKeep(5)
           }
         }
-        
+
         triggers {
-          periodic(1)  // Scan every minute
+          // Webhooks (via smee.io) are the primary trigger — instant on push.
+          // periodic() is a daily fallback in case a webhook is missed.
+          periodic(1440)
         }
       }

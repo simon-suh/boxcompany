@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smee-client
+  namespace: jenkins
+  labels:
+    app: smee-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smee-client
+  template:
+    metadata:
+      labels:
+        app: smee-client
+    spec:
+      containers:
+        - name: smee-client
+          image: node:20-alpine
+          command:
+            - sh
+            - -c
+            - |
+              echo "Starting smee-client → Jenkins webhook bridge"
+              echo "Smee URL : $SMEE_URL"
+              echo "Target   : $TARGET_URL"
+              npx --yes smee-client \
+                --url    "$SMEE_URL" \
+                --target "$TARGET_URL"
+          env:
+            # Public smee.io channel — created by setup.sh and stored in ConfigMap
+            - name: SMEE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: jenkins-smee
+                  key: url
+            # Jenkins webhook endpoint inside the cluster
+            - name: TARGET_URL
+              value: "http://jenkins.jenkins.svc.cluster.local:8080/github-webhook/"
+
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+
+          # Restart immediately if the smee connection drops
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pgrep -f smee-client"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3

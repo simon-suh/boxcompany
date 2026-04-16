@@ -1,109 +1,35 @@
----
-# ServiceAccount for Jenkins
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: jenkins
   namespace: jenkins
-  labels:
-    app: jenkins
-
 ---
-# ClusterRole with permissions Jenkins needs
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: jenkins-cluster-role
-  labels:
-    app: jenkins
+  name: jenkins
 rules:
-  # Pod management (for dynamic agents)
+  # Pod management — needed to spawn and monitor agent pods
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "pods/exec"]
-    verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
-  
-  # Secrets (for credentials)
+    resources: ["pods", "pods/exec", "pods/log"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  # Secrets — needed for credentials binding in pipelines
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "watch", "create", "update", "delete"]
-  
-  # ConfigMaps
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch", "create", "update"]
-  
-  # Persistent Volume Claims
-  - apiGroups: [""]
-    resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "watch", "create", "update", "delete"]
-  
-  # Services (for accessing services)
-  - apiGroups: [""]
-    resources: ["services"]
-    verbs: ["get", "list", "watch"]
-  
-  # Deployments (for monitoring/updating)
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets", "statefulsets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  
-  # Events (for debugging)
+    verbs: ["get", "list"]
+  # Events — used by the Kubernetes plugin for status reporting
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "watch"]
-  
-  # Namespaces (for multi-namespace access)
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch"]
-
 ---
-# ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: jenkins-cluster-role-binding
-  labels:
-    app: jenkins
+  name: jenkins
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: jenkins-cluster-role
-subjects:
-  - kind: ServiceAccount
-    name: jenkins
-    namespace: jenkins
-
----
-# Role for boxco namespace (deployment access)
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: jenkins-boxco-role
-  namespace: boxco
-  labels:
-    app: jenkins
-rules:
-  - apiGroups: [""]
-    resources: ["pods", "pods/log", "services", "configmaps", "secrets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-
----
-# RoleBinding for boxco namespace
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: jenkins-boxco-role-binding
-  namespace: boxco
-  labels:
-    app: jenkins
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: jenkins-boxco-role
+  name: jenkins
 subjects:
   - kind: ServiceAccount
     name: jenkins

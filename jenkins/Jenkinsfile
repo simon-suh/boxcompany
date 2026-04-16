@@ -1,86 +1,207 @@
-pipeline {
-    agent any
+// ─────────────────────────────────────────────────────────────────────────────
+// BoxCo CI/CD Pipeline
+//
+// Triggered by: push to  main | scenario-2 | scenario-3
+//
+// Tag convention (matches demo scripts):
+//   main        →  scenario-1
+//   scenario-2  →  scenario-2
+//   scenario-3  →  scenario-3
+//
+// Smart build strategy:
+//   • If image already exists in registry  →  skip Docker build (fast demo)
+//   • If image does not exist              →  build + push (first run / setup)
+//
+// Flow:
+//   Build (if needed) → Push → Update k8s/services/ on main → Argo CD syncs ✨
+// ─────────────────────────────────────────────────────────────────────────────
 
-    environment {
-        REGISTRY_HOST = "192.168.49.2:30500"
-        GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-        BRANCH_NAME = sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
-        IMAGE_TAG = "${BRANCH_NAME}-${GIT_COMMIT_SHORT}"
+pipeline {
+
+    agent {
+        kubernetes {
+            label 'boxco-builder'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+
+  # Docker-in-Docker daemon — used when a build is required
+  - name: dind
+    image: docker:24-dind
+    securityContext:
+      privileged: true
+    args:
+      - --insecure-registry=0.0.0.0/0    # allow local registry (demo env)
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+
+  # Builder — runs all pipeline steps; talks to dind over TCP
+  - name: builder
+    image: docker:24-cli
+    command: [cat]
+    tty: true
+    env:
+    - name: DOCKER_HOST
+      value: tcp://localhost:2375
+    # Downward API: node IP injected at pod startup — no hardcoded addresses.
+    # Works on any machine without manual configuration.
+    - name: NODE_IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.hostIP
+'''
+        }
     }
 
-    options {
-        timeout(time: 15, unit: 'MINUTES')
-        buildDiscarder(logRotator(numToKeepStr: '5'))
+    environment {
+        // Tag convention: main → scenario-1, others keep their branch name
+        IMAGE_TAG    = "${BRANCH_NAME == 'main' ? 'scenario-1' : BRANCH_NAME}"
+        SCENARIO_NUM = "${(BRANCH_NAME == 'main' ? 'scenario-1' : BRANCH_NAME).replace('scenario-', '')}"
+        GIT_REPO     = 'https://github.com/simon-suh/boxcompany.git'
     }
 
     stages {
-        stage('Checkout') {
+
+        // ── Guard ─────────────────────────────────────────────────────────────
+        // Prevents a recursive loop when Jenkins commits manifest updates back
+        // to main. Any commit with [skip ci] in the message is ignored.
+        stage('Check [skip ci]') {
             steps {
-                checkout scm
-                sh '''
-                    echo "Branch: ${BRANCH_NAME}"
-                    echo "Commit: ${GIT_COMMIT_SHORT}"
-                    echo "Image tag: ${IMAGE_TAG}"
-                '''
+                script {
+                    def msg = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                    if (msg.contains('[skip ci]')) {
+                        currentBuild.result = 'NOT_BUILT'
+                        error("Skipping — commit contains [skip ci]")
+                    }
+                }
             }
         }
 
-        stage('Build Images') {
+        // ── Setup ─────────────────────────────────────────────────────────────
+        // Resolve the registry address from the Kubernetes node IP at runtime.
+        // This means anyone who clones the repo gets the right address
+        // automatically — no manual minikube ip lookups.
+        stage('Setup') {
             steps {
-                sh '''
-                    echo "Building Docker images..."
-                    echo "Would build: ${REGISTRY_HOST}/sales-api:${IMAGE_TAG}"
-                    echo "Would build: ${REGISTRY_HOST}/inventory-api:${IMAGE_TAG}"
-                    echo "Would build: ${REGISTRY_HOST}/shipment-api:${IMAGE_TAG}"
-                    echo "Would build: ${REGISTRY_HOST}/notification-service:${IMAGE_TAG}"
-                '''
+                container('builder') {
+                    script {
+                        env.REGISTRY = sh(
+                            script: 'printf "%s:30500" "$NODE_IP"',
+                            returnStdout: true
+                        ).trim()
+                        echo "Registry  : ${env.REGISTRY}"
+                        echo "Image tag : ${IMAGE_TAG}  (Scenario ${SCENARIO_NUM})"
+                    }
+                    sh 'apk add --no-cache git'
+                    sh 'docker version'
+                }
             }
         }
 
-        stage('Push Images') {
+        // ── Build & Push ───────────────────────────────────────────────────────
+        // Smart build: checks if the image already exists in the registry.
+        //
+        //   EXISTS  →  skip build entirely (fast — ~5s per service)
+        //              This is the demo path: setup pre-built the images,
+        //              so scenario transitions are near-instant.
+        //
+        //   MISSING →  build from Dockerfile + push
+        //              This is the first-run / fresh-clone path.
+        stage('Build & Push Images') {
             steps {
-                sh '''
-                    echo "Pushing images to registry..."
-                    echo "Would push: ${REGISTRY_HOST}/sales-api:${IMAGE_TAG}"
-                    echo "Would push: ${REGISTRY_HOST}/inventory-api:${IMAGE_TAG}"
-                    echo "Would push: ${REGISTRY_HOST}/shipment-api:${IMAGE_TAG}"
-                    echo "Would push: ${REGISTRY_HOST}/notification-service:${IMAGE_TAG}"
-                '''
+                container('builder') {
+                    script {
+                        def services = ['sales-api', 'inventory-api', 'shipment-api', 'notification-service']
+
+                        services.each { svc ->
+                            def imageRef = "${env.REGISTRY}/${svc}:${IMAGE_TAG}"
+
+                            def exists = sh(
+                                script: "docker pull ${imageRef} > /dev/null 2>&1 && echo yes || echo no",
+                                returnStdout: true
+                            ).trim()
+
+                            if (exists == 'yes') {
+                                echo "✓ ${svc}:${IMAGE_TAG} already in registry — skipping build"
+                            } else {
+                                echo ">>> Building ${imageRef} (not found in registry)"
+                                sh "docker build -t ${imageRef} services/${svc}"
+                                sh "docker push  ${imageRef}"
+                                echo "✓ ${svc}:${IMAGE_TAG} pushed"
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        stage('Update Manifests') {
+        // ── Update Manifests ───────────────────────────────────────────────────
+        // Always updates main branch regardless of which branch triggered the build.
+        // Argo CD watches main/k8s/services/ and auto-syncs on any change.
+        //
+        // Two fields are patched per manifest (mirrors what demo-run.sh did):
+        //   1. image:   registry/service:tag
+        //   2. SCENARIO env var value: "1" | "2" | "3"
+        stage('Update Manifests → main') {
             steps {
-                sh '''
-                    echo "Updating Kubernetes manifests with new image tags..."
-                    echo "Argo CD will detect changes and sync automatically"
-                '''
-            }
-        }
+                container('builder') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'github-credentials',
+                        usernameVariable: 'GIT_USER',
+                        passwordVariable: 'GIT_TOKEN'
+                    )]) {
+                        sh """
+                            # Clone main — we always patch the live branch Argo CD watches
+                            git clone --branch main --depth 1 \\
+                                https://\${GIT_USER}:\${GIT_TOKEN}@github.com/simon-suh/boxcompany.git \\
+                                manifest-repo
 
-        stage('Trigger Deployment') {
-            steps {
-                sh '''
-                    echo "Deployment triggered!"
-                    echo "Argo CD is syncing new manifests to cluster..."
-                    echo "Check Grafana to see metrics improve!"
-                '''
+                            cd manifest-repo
+                            git config user.email "jenkins@boxcompany.local"
+                            git config user.name  "Jenkins CI"
+
+                            for svc in sales-api inventory-api shipment-api notification-service; do
+                                MANIFEST="k8s/services/\${svc}.yaml"
+
+                                # Patch image reference
+                                sed -i "s|image: .*/${svc}:.*|image: ${env.REGISTRY}/\${svc}:${IMAGE_TAG}|g" "\${MANIFEST}"
+
+                                # Patch SCENARIO env var  (matches value: "N" pattern in manifests)
+                                sed -i 's|value: "[0-9]"|value: "${SCENARIO_NUM}"|g' "\${MANIFEST}"
+
+                                echo "  ✓ \${svc}: image=${IMAGE_TAG}, scenario=${SCENARIO_NUM}"
+                            done
+
+                            git add k8s/services/
+                            if git diff --staged --quiet; then
+                                echo "Manifests already up to date — nothing to commit."
+                            else
+                                git commit -m "ci: deploy ${IMAGE_TAG} (scenario ${SCENARIO_NUM}) [skip ci]"
+                                git push origin main
+                                echo "Manifests updated. Argo CD will sync to cluster shortly."
+                            fi
+                        """
+                    }
+                }
             }
         }
     }
 
     post {
         success {
-            echo '''
-            ✅ Pipeline completed successfully!
-            
-            📦 Images tagged: ${IMAGE_TAG}
-            🔄 Argo CD will auto-sync
-            📊 Check Grafana for metrics
-            '''
+            echo """
+            ✅ Pipeline complete!
+               Branch   : ${BRANCH_NAME}
+               Tag      : ${IMAGE_TAG}
+               Scenario : ${SCENARIO_NUM}
+               → Argo CD is syncing to the cluster now.
+            """
         }
         failure {
-            echo '❌ Pipeline failed! Check logs above.'
+            echo "❌ Pipeline failed on '${BRANCH_NAME}'. Check the logs above."
         }
     }
 }

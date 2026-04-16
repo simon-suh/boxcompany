@@ -1,16 +1,11 @@
----
-# Persistent Volume Claim for Jenkins home directory
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: jenkins-pvc
+  name: jenkins-home
   namespace: jenkins
-  labels:
-    app: jenkins
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
       storage: 10Gi
-  # Uses default storage class (standard for Minikube)
