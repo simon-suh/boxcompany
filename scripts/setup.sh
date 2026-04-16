@@ -126,7 +126,7 @@ ok "Registry ready at ${MINIKUBE_IP}:30500"
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 5/12 — Prometheus + Grafana"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
-helm repo update --hide-no-updates
+helm repo update 2>/dev/null || true
 
 if helm list -n observability | grep -q prometheus; then
     ok "Prometheus stack already installed"
