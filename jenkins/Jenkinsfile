@@ -3,7 +3,7 @@
 //
 // Triggered by: push to  main | scenario-2 | scenario-3
 //
-// Tag convention (matches demo scripts):
+// Tag convention:
 //   main        →  scenario-1
 //   scenario-2  →  scenario-2
 //   scenario-3  →  scenario-3
@@ -14,6 +14,11 @@
 //
 // Flow:
 //   Build (if needed) → Push → Update k8s/services/ on main → Argo CD syncs ✨
+//
+// Notes:
+//   • [skip ci] guard prevents recursive trigger loop when Jenkins commits back
+//   • Lock on Update Manifests prevents race condition when branches build in parallel
+//   • NODE_IP from Downward API — no hardcoded registry addresses
 // ─────────────────────────────────────────────────────────────────────────────
 
 pipeline {
@@ -65,6 +70,8 @@ spec:
     stages {
 
         // ── Guard ─────────────────────────────────────────────────────────────
+        // Prevents a recursive loop when Jenkins commits manifest updates back
+        // to main. Any commit with [skip ci] in the message is ignored.
         stage('Check [skip ci]') {
             steps {
                 script {
@@ -78,6 +85,8 @@ spec:
         }
 
         // ── Setup ─────────────────────────────────────────────────────────────
+        // Resolve the registry address from the Kubernetes node IP at runtime.
+        // Works on any machine — no manual minikube ip lookups needed.
         stage('Setup') {
             steps {
                 container('builder') {
@@ -90,7 +99,7 @@ spec:
                         echo "Image tag : ${IMAGE_TAG}  (Scenario ${SCENARIO_NUM})"
                     }
                     sh 'apk add --no-cache git'
-                    // Wait for dind to be ready before proceeding
+                    // Wait for dind daemon to be ready before connecting
                     sh '''
                         for i in $(seq 1 30); do
                             docker version > /dev/null 2>&1 && break
@@ -104,6 +113,13 @@ spec:
         }
 
         // ── Build & Push ───────────────────────────────────────────────────────
+        // Smart build: checks if the image already exists in the registry.
+        //
+        //   EXISTS  →  skip build (fast — ~5s per service)
+        //              Demo path: setup pre-built all images, transitions are instant.
+        //
+        //   MISSING →  build from Dockerfile + push
+        //              First-run / fresh-clone path.
         stage('Build & Push Images') {
             steps {
                 container('builder') {
@@ -133,41 +149,56 @@ spec:
         }
 
         // ── Update Manifests ───────────────────────────────────────────────────
+        // Always updates main branch regardless of which branch triggered the build.
+        // Argo CD watches main/k8s/services/ and auto-syncs on any change.
+        //
+        // Lock prevents race condition when multiple branches build simultaneously —
+        // without it, parallel builds can overwrite each other's manifest commits.
+        //
+        // Two fields patched per manifest:
+        //   1. image:   registry/service:tag
+        //   2. SCENARIO env var value: "1" | "2" | "3"
         stage('Update Manifests → main') {
             steps {
-                container('builder') {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'github-credentials',
-                        usernameVariable: 'GIT_USER',
-                        passwordVariable: 'GIT_TOKEN'
-                    )]) {
-                        sh """
-                            git clone --branch main --depth 1 \\
-                                https://\${GIT_USER}:\${GIT_TOKEN}@github.com/simon-suh/boxcompany.git \\
-                                manifest-repo
+                lock('update-manifests') {
+                    container('builder') {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'github-credentials',
+                            usernameVariable: 'GIT_USER',
+                            passwordVariable: 'GIT_TOKEN'
+                        )]) {
+                            sh """
+                                # Clone main — always patch the live branch Argo CD watches
+                                git clone --branch main --depth 1 \\
+                                    https://\${GIT_USER}:\${GIT_TOKEN}@github.com/simon-suh/boxcompany.git \\
+                                    manifest-repo
 
-                            cd manifest-repo
-                            git config user.email "jenkins@boxcompany.local"
-                            git config user.name  "Jenkins CI"
+                                cd manifest-repo
+                                git config user.email "jenkins@boxcompany.local"
+                                git config user.name  "Jenkins CI"
 
-                            for svc in sales-api inventory-api shipment-api notification-service; do
-                                MANIFEST="k8s/services/\${svc}.yaml"
+                                for svc in sales-api inventory-api shipment-api notification-service; do
+                                    MANIFEST="k8s/services/\${svc}.yaml"
 
-                                sed -i "s|image: .*/\${svc}:.*|image: ${env.REGISTRY}/\${svc}:${IMAGE_TAG}|g" "\${MANIFEST}"
-                                sed -i "s|value: \\\"[0-9]\\\"|value: \\\"${SCENARIO_NUM}\\\"|g" "\${MANIFEST}"
+                                    # Patch image reference
+                                    sed -i "s|image: .*/\${svc}:.*|image: ${env.REGISTRY}/\${svc}:${IMAGE_TAG}|g" "\${MANIFEST}"
 
-                                echo "  ✓ \${svc}: image=${IMAGE_TAG}, scenario=${SCENARIO_NUM}"
-                            done
+                                    # Patch SCENARIO env var (matches value: "N" pattern)
+                                    sed -i "s|value: \\\"[0-9]\\\"|value: \\\"${SCENARIO_NUM}\\\"|g" "\${MANIFEST}"
 
-                            git add k8s/services/
-                            if git diff --staged --quiet; then
-                                echo "Manifests already up to date — nothing to commit."
-                            else
-                                git commit -m "ci: deploy ${IMAGE_TAG} (scenario ${SCENARIO_NUM}) [skip ci]"
-                                git push origin main
-                                echo "Manifests updated. Argo CD will sync to cluster shortly."
-                            fi
-                        """
+                                    echo "  ✓ \${svc}: image=${IMAGE_TAG}, scenario=${SCENARIO_NUM}"
+                                done
+
+                                git add k8s/services/
+                                if git diff --staged --quiet; then
+                                    echo "Manifests already up to date — nothing to commit."
+                                else
+                                    git commit -m "ci: deploy ${IMAGE_TAG} (scenario ${SCENARIO_NUM}) [skip ci]"
+                                    git push origin main
+                                    echo "Manifests updated. Argo CD will sync to cluster shortly."
+                                fi
+                            """
+                        }
                     }
                 }
             }
