@@ -8,6 +8,7 @@ configuration-as-code
 role-strategy
 credentials-binding
 pipeline-stage-view
+lockable-resources
 json-path-api
 mina-sshd-api-core
 mina-sshd-api-common
