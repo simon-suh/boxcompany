@@ -7,7 +7,7 @@
 #   1.  Starts Minikube
 #   2.  Enables Ingress
 #   3.  Creates all namespaces
-#   4.  Deploys local Docker registry
+#   4.  Deploys local Docker registry (with persistent storage)
 #   5.  Installs Prometheus + Grafana
 #   6.  Installs Argo CD + registers applications
 #   7.  Deploys databases (Postgres, DynamoDB) + Kafka
@@ -27,14 +27,12 @@
 # ═════════════════════════════════════════════════════════════════════════════
 set -e
 
-# ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
 
 AUTO_YES=false
 [[ "$1" == "-y" || "$1" == "--yes" ]] && AUTO_YES=true
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 header() {
     echo -e "\n${BLUE}╔══════════════════════════════════════════════════╗\n║  $1\n╚══════════════════════════════════════════════════╝${NC}"
 }
@@ -54,15 +52,14 @@ done
 
 # ── Credentials ───────────────────────────────────────────────────────────────
 # Skip prompts entirely if the secret already exists (re-run scenario)
-if kubectl get secret jenkins-credentials -n jenkins &>/dev/null; then
+if kubectl get secret jenkins-credentials -n jenkins &>/dev/null 2>&1; then
     ok "Jenkins credentials already set — skipping prompts"
-    # Read existing values for use in credentials.txt later
     JENKINS_ADMIN_PASS=$(kubectl get secret jenkins-credentials -n jenkins \
-        -o jsonpath="{.data.admin-password}" | base64 -d)
+        -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d)
     GITHUB_USERNAME=$(kubectl get secret jenkins-credentials -n jenkins \
-        -o jsonpath="{.data.github-username}" | base64 -d)
+        -o jsonpath="{.data.github-username}" 2>/dev/null | base64 -d)
     GITHUB_TOKEN=$(kubectl get secret jenkins-credentials -n jenkins \
-        -o jsonpath="{.data.github-token}" | base64 -d)
+        -o jsonpath="{.data.github-token}" 2>/dev/null | base64 -d)
 else
     step "GitHub credentials for Jenkins"
     echo ""
@@ -96,7 +93,8 @@ if minikube status 2>/dev/null | grep -q "Running"; then
     ok "Minikube already running"
 else
     echo "Starting Minikube (8 GB RAM, 4 CPUs)..."
-    minikube start --memory=8192 --cpus=4 --insecure-registry="192.168.0.0/16"
+    # Use specific registry IP to ensure insecure registry works correctly
+    minikube start --memory=8192 --cpus=4 --insecure-registry="192.168.49.2:30500"
     ok "Minikube started"
 fi
 MINIKUBE_IP=$(minikube ip)
@@ -126,7 +124,10 @@ for ns in boxco observability argocd registry jenkins; do
 done
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4 — Local Docker Registry
+# STEP 4 — Local Docker Registry (with persistent storage)
+# ═════════════════════════════════════════════════════════════════════════════
+# Registry uses a PVC so images survive Minikube restarts.
+# Without persistence, all images are lost on restart and must be rebuilt.
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 4/12 — Local Docker registry"
 kubectl apply -f k8s/registry/ > /dev/null
@@ -225,7 +226,7 @@ kubectl create configmap jenkins-plugins \
     --dry-run=client -o yaml | kubectl apply -f - > /dev/null
 ok "ConfigMaps created (CasC + plugins)"
 
-# 8c. Apply Jenkins manifests (smee.yaml applied after smee URL is known in Step 9)
+# 8c. Apply Jenkins manifests (smee.yaml applied separately in Step 9)
 kubectl apply -f jenkins/k8s/namespace.yaml  > /dev/null
 kubectl apply -f jenkins/k8s/pvc.yaml        > /dev/null
 kubectl apply -f jenkins/k8s/rbac.yaml       > /dev/null
@@ -234,7 +235,7 @@ kubectl apply -f jenkins/k8s/service.yaml    > /dev/null
 ok "Jenkins manifests applied"
 
 echo "  Waiting for Jenkins pod (plugin install takes 2-3 min)..."
-kubectl wait --for=condition=ready pod -l app=jenkins -n jenkins --timeout=360s
+kubectl wait --for=condition=ready pod -l app=jenkins -n jenkins --timeout=480s
 ok "Jenkins pod ready"
 
 # 8d. Wait for Jenkins HTTP to respond
@@ -243,7 +244,7 @@ for i in $(seq 1 40); do
     STATUS=$(kubectl exec -n jenkins deploy/jenkins -- \
         curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/login 2>/dev/null || echo "0")
     [[ "$STATUS" == "200" ]] && { ok "Jenkins web UI up"; break; }
-    [[ $i -eq 40 ]] && warn "Jenkins web UI slow to respond — check logs if builds don't start"
+    [[ $i -eq 40 ]] && warn "Jenkins UI slow to respond — check logs if builds don't start"
     sleep 10
 done
 
@@ -252,10 +253,8 @@ done
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 9/12 — Webhook bridge (smee.io)"
 
-# Check if smee is already configured
 if kubectl get configmap jenkins-smee -n jenkins &>/dev/null; then
-    SMEE_URL=$(kubectl get configmap jenkins-smee -n jenkins \
-        -o jsonpath="{.data.url}")
+    SMEE_URL=$(kubectl get configmap jenkins-smee -n jenkins -o jsonpath="{.data.url}")
     ok "Smee already configured: ${SMEE_URL}"
 else
     echo "  Creating smee.io channel..."
@@ -274,7 +273,6 @@ else
         --dry-run=client -o yaml | kubectl apply -f - > /dev/null
     ok "Smee URL stored in ConfigMap"
 
-    # Register GitHub webhook
     echo "  Registering GitHub webhook..."
     WEBHOOK_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
         -X POST \
@@ -294,7 +292,7 @@ else
     if [[ "$WEBHOOK_RESPONSE" == "201" ]]; then
         ok "GitHub webhook registered → ${SMEE_URL}"
     else
-        warn "GitHub webhook registration returned HTTP ${WEBHOOK_RESPONSE}"
+        warn "Webhook registration returned HTTP ${WEBHOOK_RESPONSE}"
         warn "Add manually: GitHub repo → Settings → Webhooks → Add"
         warn "  Payload URL : ${SMEE_URL}"
         warn "  Content type: application/json"
@@ -309,7 +307,7 @@ ok "Smee client pod deployed"
 # STEP 10 — Pre-build scenario images via Jenkins
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 10/12 — Pre-building scenario images"
-echo "  Triggering Jenkins builds for all 3 branches in the background."
+echo "  Triggering Jenkins builds for all 3 branches."
 echo "  (~15-20 min for first run — images cached in registry for demo)"
 
 kubectl port-forward -n jenkins svc/jenkins 18080:8080 > /dev/null 2>&1 &
@@ -333,7 +331,7 @@ trigger_branch() {
     if [[ "$status" == "201" ]]; then
         ok "Build triggered: ${branch}"
     else
-        warn "Could not trigger ${branch} (HTTP ${status}) — will auto-build within 1 min"
+        warn "Could not trigger ${branch} (HTTP ${status}) — trigger manually in Jenkins UI"
     fi
 }
 
@@ -346,7 +344,7 @@ done
 
 kill $PF_PID 2>/dev/null || true
 echo ""
-echo -e "  ${CYAN}Builds running in the background.${NC}"
+echo -e "  ${CYAN}Builds running in background.${NC}"
 echo -e "  ${CYAN}Monitor at http://localhost:8082 after port-forwards start.${NC}"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -433,6 +431,12 @@ cat > credentials.txt << EOF
  Scenario 3 (XL box) → git push to scenario-3 branch
 
  GitHub push → smee.io → Jenkins builds → Argo CD syncs → ~30 sec ✨
+
+ DEMO RESET
+ ──────────────────────────────────────────────────────────────────
+ Normal reset     → Jenkins → boxco-pipeline → main → Build Now
+ After restart    → ./scripts/start.sh, then build all 3 branches
+ Nuclear reset    → git checkout v1.0-working-demo
 ═══════════════════════════════════════════════════════════════════
 EOF
 
@@ -456,3 +460,4 @@ echo "  2. git push to scenario-2              — Jenkins + Argo CD fix the bug
 echo "  3. git push to scenario-3              — XL box appears ✨"
 echo ""
 echo -e "${BLUE}Credentials:${NC} ./credentials.txt"
+echo -e "${BLUE}Day-of-demo:${NC} ./scripts/start.sh"
