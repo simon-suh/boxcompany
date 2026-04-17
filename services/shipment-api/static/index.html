@@ -179,8 +179,6 @@
     color: var(--text); background: var(--bg); outline: none;
   }
   .rfield textarea { height: 72px; resize: none; }
-  .check-row { display: flex; gap: 16px; flex-wrap: wrap; }
-  .check-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
   .report-sent {
     margin-top: 12px; padding: 11px 14px;
     background: var(--success-bg); border: 1px solid var(--success-border);
@@ -292,14 +290,6 @@
     <div class="rfield">
       <label>Description</label>
       <textarea id="r-desc" placeholder="Describe the issue in detail..."></textarea>
-    </div>
-    <div class="rfield">
-      <label>Notify teams</label>
-      <div class="check-row">
-        <label><input type="checkbox" id="n-sales" checked/> Sales team</label>
-        <label><input type="checkbox" id="n-inventory" checked/> Inventory team</label>
-        <label><input type="checkbox" id="n-dev"/> Dev team</label>
-      </div>
     </div>
     <div class="tform-actions">
       <button class="btn-primary" onclick="submitReport()">Send report</button>
@@ -495,11 +485,6 @@ async function submitReport() {
   const desc  = document.getElementById('r-desc').value.trim();
   if (!order || !type || !desc) { alert('Please fill in all report fields.'); return; }
 
-  const notifyTeams = [];
-  if (document.getElementById('n-sales').checked) notifyTeams.push('sales');
-  if (document.getElementById('n-inventory').checked) notifyTeams.push('inventory');
-  if (document.getElementById('n-dev').checked) notifyTeams.push('dev');
-
   const selectedOrder = orders.find(o => o.orderId === order);
   const orderNumber = selectedOrder ? selectedOrder.orderNumber : '';
 
@@ -507,26 +492,22 @@ async function submitReport() {
     const res = await fetch(`${API}/errors`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_number: orderNumber, issue_type: type, description: desc, notify_teams: notifyTeams })
+      body: JSON.stringify({ order_number: orderNumber, issue_type: type, description: desc, notify_teams: ['sales', 'inventory'] })
     });
     const data = await res.json();
 
-    // Update the order status locally so the issues counter updates immediately
     if (selectedOrder) {
       selectedOrder.status = 'issue';
     }
 
     const sent = document.getElementById('report-sent');
-    sent.textContent = `Report submitted. Kafka event published to errors.reported. Notifying: ${notifyTeams.join(', ')}.`;
+    sent.textContent = `Report submitted. Kafka event published to errors.reported.`;
     sent.classList.add('show');
-    
-    // Reload orders to refresh the table and metrics
+
     loadOrders();
 
-    // Close the panel and clear the form after a short delay
     setTimeout(() => {
-      toggleReport(); // Close the panel (this will also resume auto-refresh)
-      // Clear form fields
+      toggleReport();
       document.getElementById('r-order').value = '';
       document.getElementById('r-type').value = '';
       document.getElementById('r-desc').value = '';
