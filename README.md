@@ -1,8 +1,8 @@
 # Box Company's Order Management System
 
-A portfolio project demonstrating event-driven microservices architecture using real infrastructure tooling. Built to show three internal teams (Sales, Shipment, and Inventory) communicating through a shared Kafka event backbone rather than calling each other's services or databases directly. The system includes three deployment scenarios that demonstrate bug introduction, fix, and feature rollout, deployed via automation scripts with a GitOps pipeline scaffolded for future implementation.
+A portfolio project demonstrating event-driven microservices architecture using real infrastructure tooling. Built to show three internal teams (Sales, Shipment, and Inventory) communicating through a shared Kafka event backbone rather than calling each other's services or databases directly. The system includes three deployment scenarios that demonstrate bug introduction, fix, and feature rollout — deployed via a fully automated GitOps pipeline powered by Jenkins and Argo CD.
 
-**Run locally with Docker Compose (Option 1) or explore the full Kubernetes stack with observability and observability (Option 2).**
+**Run locally with Docker Compose (Option 1) or explore the full Kubernetes stack with CI/CD and observability (Option 2).**
 
 ---
 
@@ -12,16 +12,17 @@ A portfolio project demonstrating event-driven microservices architecture using 
 
 This project supports two deployment modes:
 - **Option 1: Docker Compose** for quick local setup (~5 min)
-- **Option 2: Kubernetes** for full stack with CI/CD and observability (~25 min)
+- **Option 2: Kubernetes** for full stack with CI/CD and observability (~25-30 min)
 
 **Required for both options:**
 - Git
 - Docker Desktop 4.0+ (or Docker Engine 20.10+ with Docker Compose plugin)
 
-**Additional requirements for Kubernetes demo:**
+**Additional requirements for Kubernetes:**
 - Minikube 1.30+
 - kubectl 1.27+
 - Helm 3.12+
+- A GitHub Personal Access Token with `repo` scope ([create one here](https://github.com/settings/tokens))
 
 <details>
 <summary><b>Install prerequisites (click to expand)</b></summary>
@@ -35,7 +36,7 @@ That's it — you're ready for Option 1.
 
 ---
 
-#### For Kubernetes Demo (Option 2)
+#### For Kubernetes (Option 2)
 
 You'll need Docker Desktop plus the following:
 
@@ -78,10 +79,6 @@ choco install kubernetes-helm
 ```
 
 </details>
-
----
-
-Choose your **deployment mode** based on how you want to explore:
 
 ---
 
@@ -133,35 +130,54 @@ docker compose up --build
 
 </details>
 
-
 ---
 
-### Option 2: Kubernetes Demo
+### Option 2: Kubernetes
 
-**Best for:** Demonstrating complete DevOps workflow, CI/CD pipeline, observability  
+**Best for:** Exploring a complete DevOps workflow, verifying a GitOps CI/CD pipeline, observability  
 **Time:** ~25-30 minutes (one-time setup)
 
 <details>
-<summary><b>Click to expand Kubernetes setup</b></summary>
+<summary><b>Kubernetes Setup</b></summary>
 
 ```bash
 # Clone the repo
 git clone https://github.com/simon-suh/boxcompany.git
 cd boxcompany
 
-# One command setup (builds everything, deploys scenario 1)
-./scripts/full-stack-setup.sh -y
+# Run setup (interactive — prompts for GitHub credentials)
+./scripts/setup.sh
 ```
 
-Or run interactively (prompts at each step):
-```bash
-./scripts/full-stack-setup.sh
-```
+When prompted:
+- **GitHub username** — your GitHub username
+- **GitHub token** — Personal Access Token with `repo` scope
+- **Jenkins admin password** — choose a password or press Enter for `admin`
+
+Setup takes ~25-30 minutes. It will:
+1. Start Minikube
+2. Deploy all infrastructure (registry, databases, Kafka, Argo CD, Grafana)
+3. Deploy Jenkins with full Configuration as Code
+4. Register a GitHub webhook via smee.io for instant build triggers
+5. Pre-build all scenario images in the background
+6. Start all port-forwards
+7. Save all credentials to `credentials.txt`
 
 **WSL2 Users:** After setup completes, add these entries to your Windows hosts file.  
 Run in PowerShell as Administrator:
 ```powershell
 Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 sales.boxco.local shipment.boxco.local inventory.boxco.local"
+```
+
+</details>
+
+<details>
+<summary><b>Exploring the CI/CD Pipeline</b></summary>
+
+Before exploring, restart port-forwards to ensure everything is accessible:
+
+```bash
+./scripts/start.sh
 ```
 
 **Access the portals:**
@@ -170,64 +186,99 @@ Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 sale
 | Sales | http://sales.boxco.local:8080 | — |
 | Shipment | http://shipment.boxco.local:8080 | — |
 | Inventory | http://inventory.boxco.local:8080 | — |
+| Jenkins | http://localhost:8082 | admin / see `credentials.txt` |
+| Argo CD | http://localhost:8081 | admin / see `credentials.txt` |
 | Grafana | http://localhost:3000 | admin / admin |
 | Prometheus | http://localhost:9090 | — |
-| ArgoCD | http://localhost:8081 | admin / see `credentials.txt` |
 
-> **Note:** `credentials.txt` is auto-generated in your project root by `full-stack-setup.sh`. It contains the ArgoCD admin password and all access URLs.
+> **Note:** `credentials.txt` is auto-generated in your project root by `setup.sh`. It contains all passwords and access URLs.
 
-**Run the demo:**
+---
+
+### Initial Scenario: Show the Bug
+Open http://sales.boxco.local:8080. Medium boxes are orderable despite being out of stock. This is the bug on the `main` branch.
+
+### Scenario-2: Fix the Bug
 ```bash
-./scripts/demo-run.sh        # Scenario 1: White bg, bug exists
-./scripts/demo-run.sh 2      # Scenario 2: Gradient bg, bug fixed
-./scripts/demo-run.sh 3      # Scenario 3: Gray bg, XL boxes added
+git push origin scenario-2
 ```
+- GitHub fires a webhook → Jenkins triggers automatically
+- Jenkins confirms scenario-2 images are cached → skips build (~30 seconds total)
+- Jenkins commits updated image tags to `main`
+- Argo CD detects the change and syncs to the cluster
+- Out of stock items are no longer orderable
+
+
+### Scenario-3: New Item Rollout
+```bash
+git push origin scenario-3
+```
+- Same pipeline flow as above
+- XL boxes added across all portals
+
+
+You can verify each step by watching Jenkins (builds), Argo CD (sync status), and Grafana (metrics).
 
 </details>
 
 ---
 
-### Scripts Reference
-
 <details>
-<summary><b>What does full-stack-setup.sh do?</b></summary>
+<summary><b>Pipeline Reset</b></summary>
 
-1. Starts Minikube with 8GB RAM, 3 CPUs, insecure registry configured
-2. Enables NGINX Ingress Controller addon
-3. Creates namespaces (boxco, observability, argocd, registry)
-4. Sets up local Docker registry
-5. Installs Prometheus & Grafana via Helm
-6. Installs ArgoCD (dashboard mode)
-7. Deploys infrastructure (Postgres, DynamoDB, Kafka, Zookeeper)
-8. Applies Ingress routes for BoxCo services
-9. Starts port forwards
-10. Generates `credentials.txt` with all passwords and URLs
-11. Optionally builds scenario images and deploys scenario 1
+### Normal Reset
+After running through all scenarios, `main` will have scenario-3 image tags committed by Jenkins. To reset back to Scenario 1:
+
+**Jenkins → boxco-pipeline → main → Build Now**
+
+Jenkins detects the scenario-1 images are already cached in the registry and simply commits the scenario-1 tags back to `main`. Argo CD syncs automatically. No manual steps needed.
+
+### After Minikube Restart
+If you restarted your machine (but did not delete Minikube), the registry images are preserved on the PVC but port-forwards need restarting:
+
+```bash
+./scripts/start.sh
+```
+
+If `start.sh` reports the registry is empty, trigger builds for all 3 branches in Jenkins:
+- Jenkins → boxco-pipeline → main → Build Now
+- Jenkins → boxco-pipeline → scenario-2 → Build Now
+- Jenkins → boxco-pipeline → scenario-3 → Build Now
+
+Then trigger main again to reset manifests back to scenario-1.
 
 </details>
 
-<details>
-<summary><b>What does demo-setup.sh do?</b></summary>
+---
 
-1. Checks out `main` branch and builds scenario-1 images
-2. Checks out `scenario-2` branch and builds scenario-2 images
-3. Checks out `scenario-3` branch and builds scenario-3 images
-4. Pushes all images to local registry
-5. Returns to original branch
+## CI/CD Architecture
+ 
+How a git push becomes a live deployment:
+ 
+1. Push to `scenario-2` or `scenario-3`
+2. GitHub fires a webhook to the smee.io public relay channel
+3. The smee-client pod inside the cluster receives the event and forwards it to Jenkins
+4. Jenkins checks if images are already cached in the local registry — if yes, skips the build entirely
+5. Jenkins clones `main`, patches image tags and SCENARIO env vars in `k8s/services/`
+6. Jenkins commits the manifest update back to `main` with `[skip ci]` and pushes
+7. Argo CD detects the change on `main` and auto-syncs to the cluster
+8. Kubernetes rolls out new pods — the browser reflects the new scenario within ~30 seconds
+**Key design decisions:**
+ 
+- **Branch-named image tags** (`scenario-1`, `scenario-2`, `scenario-3`) instead of `latest` — each scenario's image is independently cacheable, making demo transitions near-instant after the first build
+- **`[skip ci]` guard** — prevents Jenkins from triggering itself when it commits manifest updates back to `main`, avoiding an infinite loop
+- **Kubernetes Downward API** — injects the node IP into the builder pod at startup so the registry address is resolved automatically on any machine, with no hardcoded IPs
+- **Lockable resource on manifest update** — prevents race conditions when multiple branches build simultaneously; without it, parallel builds can overwrite each other's manifest commits
+- **smee.io webhook bridge** — relays GitHub push events to Jenkins running on localhost with no public IP or tunneling required
 
-</details>
+---
 
-<details>
-<summary><b>What does demo-run.sh do?</b></summary>
+## Scripts Reference
 
-1. Updates manifest image tags to selected scenario
-2. Updates SCENARIO env var in manifests
-3. Applies manifests to Kubernetes
-4. Triggers rollout restart for all deployments (ensures fresh images)
-5. Waits for pods to be ready
-6. Re-enables ArgoCD auto-sync
-
-</details>
+| Script | When to run | What it does |
+|--------|-------------|--------------|
+| `scripts/setup.sh` | Once, on first clone | Full infrastructure setup + Jenkins deploy + image pre-build |
+| `scripts/start.sh` | After any machine restart | Restarts port-forwards, verifies health, prints URLs |
 
 ---
 
@@ -241,7 +292,7 @@ Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 sale
 
 ---
 
-### Components
+## Components
 
 | Service | Technology | Database | Kafka Events |
 |---------|-----------|----------|--------------|
@@ -252,7 +303,7 @@ Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 sale
 
 ---
 
-### Event Flow Example
+## Event Flow Example
 
 1. User orders 2x Small boxes → Sales API validates stock (HTTP call to Inventory) → Saves order to PostgreSQL → Publishes `orders.created`
 
@@ -294,7 +345,7 @@ Access Grafana at http://localhost:3000 (login: admin/admin).
 
 <details>
 <summary><b>Custom Prometheus Metrics</b></summary>
-  
+
 **Sales API exposes business metrics:**
 ```python
 # Order tracking
@@ -320,47 +371,6 @@ Prometheus scrapes every 2 seconds.
 
 ---
 
-## CI/CD Pipeline
-
-**Current State:** Demo scripts handle deployments. ArgoCD is installed as a deployment dashboard.
-
-**What works today:**
-- ✅ Local Docker registry (deployed by `full-stack-setup.sh`)
-- ✅ Pre-built scenario images via `demo-setup.sh`
-- ✅ One-command scenario switching via `demo-run.sh`
-- ✅ ArgoCD dashboard shows deployment status (auto-sync enabled by `demo-run.sh`)
-- ✅ NGINX Ingress Controller routes traffic to services
-- ✅ Prometheus/Grafana validates changes with real metrics
-
-**What's scaffolded (ready but not active):**
-- 📝 Jenkins Kubernetes manifests (not deployed)
-- 📝 Jenkinsfile pipeline structure (stages are stubs)
-- 📝 Jenkins Configuration as Code (complete but unused)
-
-<details>
-<summary><b>🚧 Planned: Full GitOps Pipeline</b></summary>
-	
-To enable the full pipeline, the following would need to be completed:
-
-1. **Jenkins deployment**: Apply `jenkins/k8s/` manifests
-2. **Jenkinsfile implementation**: Replace echo stubs with actual docker build/push commands
-3. **Webhook integration**: Connect GitHub → Jenkins → ArgoCD
-
-
-```text
-Developer pushes code
-└─▶ GitHub webhook triggers Jenkins
-└─▶ Jenkins builds & pushes images
-└─▶ Jenkins updates K8s manifests with new tags
-└─▶ ArgoCD detects Git changes, auto-syncs
-└─▶ Grafana metrics reflect the change
-```
-
-
-</details>
-
----
-
 <details>
 <summary><b>Project Structure</b> (click to expand)</summary>
 
@@ -381,11 +391,9 @@ boxcompany/
 │   └── kafka/
 │       └── schemas.json
 │
-├── scripts/                         # Setup & demo automation
-│   ├── full-stack-setup.sh          # One-command K8s deployment
-│   ├── demo-setup.sh                # Builds all scenario images
-│   ├── demo-run.sh                  # Switches between scenarios
-│   └── setup-cicd.sh                # CI/CD tooling setup
+├── scripts/
+│   ├── setup.sh                     # One-time full stack setup
+│   └── start.sh                     # Restarts port-forwards and verifies health
 │
 ├── services/                        # Microservices
 │   ├── sales-api/
@@ -435,23 +443,25 @@ boxcompany/
 │   │   ├── inventory-api.yaml
 │   │   ├── shipment-api.yaml
 │   │   ├── notification-service.yaml
-│   │   └── ingress.yaml             # NGINX Ingress routes
+│   │   └── ingress.yaml
 │   ├── registry/
-│   │   └── registry.yaml            # Local Docker registry
+│   │   └── registry.yaml            # Local Docker registry with PVC
 │   └── observability/
-│       └── servicemonitor.yaml      # Prometheus scrape config
+│       └── servicemonitor.yaml
 │
-├── jenkins/                         # CI/CD pipeline (scaffolded, not deployed)
-│   ├── Jenkinsfile                  # Pipeline stub: stages echo only
-│   ├── plugins.txt
+├── jenkins/
+│   ├── Jenkinsfile                  # Full CI/CD pipeline
+│   ├── plugins.txt                  # Jenkins plugin list
 │   └── k8s/
-│       ├── deployment.yaml
-│       ├── jenkins-casc.yaml        # Configuration as Code (ready to use)
+│       ├── deployment.yaml          # Jenkins deployment with plugin init container
+│       ├── jenkins-casc.yaml        # Configuration as Code
 │       ├── namespace.yaml
 │       ├── pvc.yaml
-│       └── rbac.yaml
+│       ├── rbac.yaml
+│       ├── service.yaml
+│       └── smee.yaml                # Webhook relay client
 │
-└── argo/                            # GitOps with ArgoCD
+└── argo/                            # GitOps with Argo CD
     ├── namespace.yaml
     ├── project.yaml
     └── applications/
@@ -474,32 +484,26 @@ boxcompany/
 **Databases**
 - PostgreSQL 16 - Customer orders (Sales API)
 - DynamoDB Local 2.0 - Shipment tracking, inventory stock
-
 **Event Streaming**
 - Apache Kafka - Event backbone between services
   - Docker Compose: Confluent Platform 7.6 (Kafka 3.6)
   - Kubernetes: wurstmeister/kafka 2.8 (Confluent images had compatibility issues with Minikube)
 - Zookeeper - Kafka coordination (KRaft mode planned for production)
-
 **Container & Orchestration**
 - Docker & Docker Compose - Local development
 - Kubernetes (Minikube) - Container orchestration
 - Helm 3.x - Kubernetes package manager
-
 **Networking**
 - NGINX Ingress Controller - Routes external traffic to services via hostnames
-
 **Observability**
 - Prometheus - Metrics collection (2s scrape interval)
 - Grafana - Dashboards and visualization
 - prometheus_client - Python instrumentation
-
 **CI/CD**
-- Shell Scripts - Current deployment automation
-- Local Docker Registry - Image storage for K8s deployments
-- Argo CD - Deployment dashboard with auto-sync (enabled by `demo-run.sh`)
-- Jenkins - Scaffolded, not deployed
-
+- Jenkins - CI pipeline running on Kubernetes with ephemeral agent pods; builds Docker images and commits manifest updates
+- Argo CD - GitOps continuous delivery; auto-syncs cluster state when manifests change on `main`
+- smee.io - Webhook relay bridge connecting GitHub push events to Jenkins running on localhost
+- Local Docker Registry - PVC-backed image storage; images persist across Minikube restarts
 **Frontend**
 - HTML, CSS, JavaScript - Responsive service portals
 
