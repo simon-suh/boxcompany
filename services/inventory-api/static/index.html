@@ -183,6 +183,38 @@
     font-family: 'DM Sans', sans-serif;
   }
   .refresh-btn:hover { background: var(--surface); }
+
+  .report-btn {
+    font-size: 12px; padding: 6px 14px;
+    border: 1px solid var(--error-border); border-radius: var(--radius);
+    background: var(--error-bg); color: var(--error-text); cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-weight: 500;
+    transition: background 0.12s;
+  }
+  .report-btn:hover { background: var(--error-border); }
+
+  .report-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 24px; margin-bottom: 20px;
+    display: none;
+  }
+  .report-panel.show { display: block; }
+  .report-panel h3 { font-size: 14px; font-weight: 500; margin-bottom: 16px; }
+  .rfield { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .rfield label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+  .rfield select, .rfield textarea {
+    padding: 8px 11px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius); font-size: 13px; font-family: 'DM Sans', sans-serif;
+    color: var(--text); background: var(--bg); outline: none;
+  }
+  .rfield textarea { height: 72px; resize: none; }
+  .report-sent {
+    margin-top: 12px; padding: 11px 14px;
+    background: var(--success-bg); border: 1px solid var(--success-border);
+    border-radius: var(--radius); font-size: 13px; color: var(--success-text);
+    display: none;
+  }
+  .report-sent.show { display: block; }
 </style>
 </head>
 <body>
@@ -241,10 +273,37 @@
     <div class="update-success" id="update-success"></div>
   </div>
 
+  <!-- Report panel -->
+  <div class="report-panel" id="report-panel">
+    <h3>Report an issue</h3>
+    <div class="rfield">
+      <label>Issue type</label>
+      <select id="r-type">
+        <option value="">Select issue type</option>
+        <option value="stock-discrepancy">Stock discrepancy</option>
+        <option value="damaged-stock">Damaged stock received</option>
+        <option value="supplier-delay">Supplier delay</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="rfield">
+      <label>Description</label>
+      <textarea id="r-desc" placeholder="Describe the issue in detail..."></textarea>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="btn-primary" id="r-submit" onclick="submitReport()">Send report</button>
+      <button class="btn-cancel" onclick="toggleReport()">Cancel</button>
+    </div>
+    <div class="report-sent" id="report-sent"></div>
+  </div>
+
   <!-- Activity log -->
   <div class="section-header">
     <span class="section-label">Stock activity log</span>
-    <button class="refresh-btn" onclick="loadInventory()">Refresh</button>
+    <div style="display:flex;gap:8px">
+      <button class="refresh-btn" onclick="loadInventory()">Refresh</button>
+      <button class="report-btn" onclick="toggleReport()">Report an issue</button>
+    </div>
   </div>
   <div class="card">
     <table class="log-table">
@@ -396,6 +455,35 @@ function renderLog() {
 
 loadInventory();
 setInterval(loadInventory, 3000);
+
+function toggleReport() {
+  document.getElementById('report-panel').classList.toggle('show');
+  document.getElementById('report-sent').classList.remove('show');
+}
+
+async function submitReport() {
+  const type = document.getElementById('r-type').value;
+  const desc = document.getElementById('r-desc').value.trim();
+  if (!type || !desc) { alert('Please fill in all report fields.'); return; }
+
+  try {
+    await fetch(`${API}/errors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issue_type: type, description: desc, notify_teams: ['inventory'] })
+    });
+  } catch(e) {}
+
+  const sent = document.getElementById('report-sent');
+  sent.textContent = 'Report submitted. Kafka event published to errors.reported.';
+  sent.classList.add('show');
+  setTimeout(() => {
+    toggleReport();
+    document.getElementById('r-type').value = '';
+    document.getElementById('r-desc').value = '';
+    document.getElementById('report-sent').classList.remove('show');
+  }, 2000);
+}
 
 // Auto-reload on scenario change
 let currentScenario = null;
