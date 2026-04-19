@@ -3,21 +3,6 @@
 # BoxCo Demo Setup
 # Run ONCE before the demo. Takes ~20-30 minutes.
 #
-# What this does:
-#   1.  Starts Minikube
-#   2.  Enables Ingress
-#   3.  Creates all namespaces
-#   4.  Deploys local Docker registry (with persistent storage)
-#   5.  Installs Prometheus + Grafana
-#   6.  Installs Argo CD + registers applications
-#   7.  Deploys databases (Postgres, DynamoDB) + Kafka
-#   8.  Deploys Jenkins (with CasC + plugin install)
-#   9.  Sets up smee.io webhook bridge + registers GitHub webhook
-#   10. Triggers Jenkins to pre-build all scenario images
-#   11. Starts port-forwards
-#   12. Configures local DNS
-#   13. Saves all credentials to credentials.txt
-#
 # Usage:
 #   ./scripts/setup.sh          — interactive
 #   ./scripts/setup.sh -y       — non-interactive (reads from env vars)
@@ -51,7 +36,6 @@ for cmd in minikube kubectl helm docker git curl; do
 done
 
 # ── Credentials ───────────────────────────────────────────────────────────────
-# Skip prompts entirely if the secret already exists (re-run scenario)
 if kubectl get secret jenkins-credentials -n jenkins &>/dev/null 2>&1; then
     ok "Jenkins credentials already set — skipping prompts"
     JENKINS_ADMIN_PASS=$(kubectl get secret jenkins-credentials -n jenkins \
@@ -78,10 +62,20 @@ else
         JENKINS_ADMIN_PASS="${JENKINS_ADMIN_PASS:-admin}"
         ok "Using credentials from environment"
     else
-        read -p  "  GitHub username  : " GITHUB_USERNAME
-        read -sp "  GitHub token     : " GITHUB_TOKEN; echo
-        read -sp "  Jenkins admin password (Enter for 'admin'): " JENKINS_ADMIN_PASS; echo
-        JENKINS_ADMIN_PASS="${JENKINS_ADMIN_PASS:-admin}"
+        while true; do
+            read -p  "  GitHub username  : " GITHUB_USERNAME
+            read -sp "  GitHub token     : " GITHUB_TOKEN; echo
+            read -sp "  Jenkins admin password (Enter for 'admin'): " JENKINS_ADMIN_PASS; echo
+            JENKINS_ADMIN_PASS="${JENKINS_ADMIN_PASS:-admin}"
+
+            if [[ -z "$GITHUB_USERNAME" ]]; then
+                warn "GitHub username cannot be empty. Please try again."
+            elif [[ -z "$GITHUB_TOKEN" ]]; then
+                warn "GitHub token cannot be empty. Please try again."
+            else
+                break
+            fi
+        done
     fi
 fi
 
@@ -93,7 +87,6 @@ if minikube status 2>/dev/null | grep -q "Running"; then
     ok "Minikube already running"
 else
     echo "Starting Minikube (8 GB RAM, 4 CPUs)..."
-    # Use specific registry IP to ensure insecure registry works correctly
     minikube start --memory=8192 --cpus=4 --insecure-registry="192.168.49.2:30500"
     ok "Minikube started"
 fi
@@ -124,10 +117,7 @@ for ns in boxco observability argocd registry jenkins; do
 done
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4 — Local Docker Registry (with persistent storage)
-# ═════════════════════════════════════════════════════════════════════════════
-# Registry uses a PVC so images survive Minikube restarts.
-# Without persistence, all images are lost on restart and must be rebuilt.
+# STEP 4 — Local Docker Registry
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 4/12 — Local Docker registry"
 kubectl apply -f k8s/registry/ > /dev/null
@@ -191,7 +181,6 @@ kubectl wait --for=condition=ready pod -l app=postgres -n boxco --timeout=120s
 kubectl wait --for=condition=ready pod -l app=dynamodb -n boxco --timeout=120s
 ok "Postgres + DynamoDB ready"
 
-# Delete and wait for full removal before recreating to avoid AlreadyExists error
 kubectl delete job dynamodb-init -n boxco --ignore-not-found > /dev/null
 kubectl wait --for=delete job/dynamodb-init -n boxco --timeout=30s 2>/dev/null || true
 kubectl apply -f k8s/databases/dynamodb-init-job.yaml > /dev/null
@@ -203,7 +192,7 @@ ok "DynamoDB initialized"
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 8/12 — Jenkins"
 
-# 8a. Credentials secret — only create if it doesn't exist
+# 8a. Credentials secret
 if kubectl get secret jenkins-credentials -n jenkins &>/dev/null; then
     ok "Credentials secret already exists"
 else
@@ -217,7 +206,7 @@ else
     ok "Credentials secret created"
 fi
 
-# 8b. ConfigMaps from repo files
+# 8b. ConfigMaps
 kubectl create configmap jenkins-casc \
     --namespace=jenkins \
     --from-file=jenkins.yaml=jenkins/k8s/jenkins-casc.yaml \
@@ -229,7 +218,7 @@ kubectl create configmap jenkins-plugins \
     --dry-run=client -o yaml | kubectl apply -f - > /dev/null
 ok "ConfigMaps created (CasC + plugins)"
 
-# 8c. Apply Jenkins manifests (smee.yaml applied separately in Step 9)
+# 8c. Apply Jenkins manifests
 kubectl apply -f jenkins/k8s/namespace.yaml  > /dev/null
 kubectl apply -f jenkins/k8s/pvc.yaml        > /dev/null
 kubectl apply -f jenkins/k8s/rbac.yaml       > /dev/null
@@ -237,22 +226,106 @@ kubectl apply -f jenkins/k8s/deployment.yaml > /dev/null
 kubectl apply -f jenkins/k8s/service.yaml    > /dev/null
 ok "Jenkins manifests applied"
 
+# 8d. Wait for Jenkins pod — poll indefinitely until ready
 echo "  Waiting for Jenkins pod (plugin install takes 2-3 min)..."
-kubectl wait --for=condition=ready pod -l app=jenkins -n jenkins --timeout=480s
+until kubectl get pod -n jenkins -l app=jenkins -o jsonpath="{.items[0].status.conditions[?(@.type=='Ready')].status}" 2>/dev/null | grep -q "True"; do
+    POD_STATUS=$(kubectl get pods -n jenkins -l app=jenkins --no-headers 2>/dev/null | awk '{print $3}' | head -1)
+    echo "  Pod status: ${POD_STATUS:-Pending} — still waiting..."
+    sleep 15
+done
 ok "Jenkins pod ready"
 
-# 8d. Wait for Jenkins HTTP to respond
+# 8e. Wait for Jenkins HTTP to respond
 echo "  Waiting for Jenkins web UI..."
-for i in $(seq 1 40); do
-    STATUS=$(kubectl exec -n jenkins deploy/jenkins -- \
-        curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/login 2>/dev/null || echo "0")
-    [[ "$STATUS" == "200" ]] && { ok "Jenkins web UI up"; break; }
-    [[ $i -eq 40 ]] && warn "Jenkins UI slow to respond — check logs if builds don't start"
+until kubectl exec -n jenkins deploy/jenkins -- \
+    curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/login 2>/dev/null | grep -q "200"; do
+    echo "  Jenkins web UI not ready yet — waiting..."
     sleep 10
 done
+ok "Jenkins web UI up"
 
-# ═════════════════════════════════════════════════════════════════════════════
-# STEP 9 — Smee webhook bridge + GitHub webhook registration
+# 8f. Create boxco-pipeline job via REST API
+echo "  Creating boxco-pipeline job..."
+
+# Start temporary port-forward for job creation
+kubectl port-forward -n jenkins svc/jenkins 18082:8080 > /dev/null 2>&1 &
+JOB_PF_PID=$!
+sleep 5
+
+CRUMB=$(curl -s -c /tmp/jenkins-cookies.txt \
+    -u "admin:${JENKINS_ADMIN_PASS}" \
+    "http://localhost:18082/crumbIssuer/api/json" 2>/dev/null)
+CRUMB_FIELD=$(echo "$CRUMB" | grep -o '"crumbRequestField":"[^"]*"' | cut -d'"' -f4)
+CRUMB_VALUE=$(echo "$CRUMB" | grep -o '"crumb":"[^"]*"' | cut -d'"' -f4)
+
+JOB_XML='<?xml version="1.1" encoding="UTF-8"?>
+<org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject plugin="workflow-multibranch@821.vc3b_4ea_780798">
+  <actions/>
+  <description>Builds all branches; updates main manifests; Argo CD deploys.</description>
+  <displayName>BoxCo Services Pipeline</displayName>
+  <properties/>
+  <orphanedItemStrategy class="com.cloudbees.hudson.plugins.folder.computed.DefaultOrphanedItemStrategy" plugin="cloudbees-folder@6.1100.ve9eed61d16c4">
+    <pruneDeadBranches>true</pruneDeadBranches>
+    <daysToKeep>-1</daysToKeep>
+    <numToKeep>-1</numToKeep>
+    <abortBuilds>false</abortBuilds>
+  </orphanedItemStrategy>
+  <triggers/>
+  <disabled>false</disabled>
+  <sources>
+    <jenkins.branch.BranchSource plugin="branch-api@2.1280.v0d4e5b_b_460ef">
+      <source class="org.jenkinsci.plugins.github_branch_source.GitHubSCMSource" plugin="github-branch-source@1967.vdea_d580c1a_b_a_">
+        <id>1</id>
+        <apiUri>https://api.github.com</apiUri>
+        <credentialsId>github-credentials</credentialsId>
+        <repoOwner>simon-suh</repoOwner>
+        <repository>boxcompany</repository>
+        <repositoryUrl>https://github.com/simon-suh/boxcompany</repositoryUrl>
+        <traits>
+          <org.jenkinsci.plugins.github__branch__source.BranchDiscoveryTrait>
+            <strategyId>1</strategyId>
+          </org.jenkinsci.plugins.github__branch__source.BranchDiscoveryTrait>
+          <org.jenkinsci.plugins.github__branch__source.OriginPullRequestDiscoveryTrait>
+            <strategyId>2</strategyId>
+          </org.jenkinsci.plugins.github__branch__source.OriginPullRequestDiscoveryTrait>
+          <org.jenkinsci.plugins.github__branch__source.ForkPullRequestDiscoveryTrait>
+            <strategyId>2</strategyId>
+            <trust class="org.jenkinsci.plugins.github_branch_source.ForkPullRequestDiscoveryTrait$TrustPermission"/>
+          </org.jenkinsci.plugins.github__branch__source.ForkPullRequestDiscoveryTrait>
+        </traits>
+      </source>
+      <strategy class="jenkins.branch.DefaultBranchPropertyStrategy">
+        <properties class="empty-list"/>
+      </strategy>
+    </jenkins.branch.BranchSource>
+  </sources>
+  <factory class="org.jenkinsci.plugins.workflow.multibranch.WorkflowBranchProjectFactory">
+    <owner class="org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" reference="../.."/>
+    <scriptPath>jenkins/Jenkinsfile</scriptPath>
+  </factory>
+</org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject>'
+
+JOB_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    -u "admin:${JENKINS_ADMIN_PASS}" \
+    -b /tmp/jenkins-cookies.txt \
+    -H "${CRUMB_FIELD}: ${CRUMB_VALUE}" \
+    -H "Content-Type: application/xml" \
+    --data-raw "$JOB_XML" \
+    "http://localhost:18082/createItem?name=boxco-pipeline" 2>/dev/null || echo "0")
+
+kill $JOB_PF_PID 2>/dev/null || true
+
+if [[ "$JOB_STATUS" == "200" || "$JOB_STATUS" == "201" ]]; then
+    ok "boxco-pipeline job created"
+elif [[ "$JOB_STATUS" == "400" ]]; then
+    ok "boxco-pipeline job already exists"
+else
+    warn "Could not create job automatically (HTTP ${JOB_STATUS})"
+    warn "Create manually: Jenkins → New Item → boxco-pipeline → Multibranch Pipeline"
+    warn "  GitHub repo    : https://github.com/simon-suh/boxcompany"
+    warn "  Credentials    : github-credentials"
+    warn "  Script path    : jenkins/Jenkinsfile"
+fi
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 9/12 — Webhook bridge (smee.io)"
 
@@ -322,15 +395,20 @@ sleep 8
 trigger_branch() {
     local branch=$1
     local encoded="${branch//\//%2F}"
-    local crumb
-    crumb=$(curl -s -u "admin:${JENKINS_ADMIN_PASS}" \
-        "http://localhost:18080/crumbIssuer/api/json" 2>/dev/null | \
-        grep -o '"crumb":"[^"]*"' | cut -d'"' -f4 || echo "")
+    local crumb_json
+    crumb_json=$(curl -s -c /tmp/jenkins-trigger-cookies.txt \
+        -u "admin:${JENKINS_ADMIN_PASS}" \
+        "http://localhost:18080/crumbIssuer/api/json" 2>/dev/null)
+    local crumb_field
+    crumb_field=$(echo "$crumb_json" | grep -o '"crumbRequestField":"[^"]*"' | cut -d'"' -f4)
+    local crumb_value
+    crumb_value=$(echo "$crumb_json" | grep -o '"crumb":"[^"]*"' | cut -d'"' -f4)
 
     local status
     status=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
         -u "admin:${JENKINS_ADMIN_PASS}" \
-        ${crumb:+-H "Jenkins-Crumb: $crumb"} \
+        -b /tmp/jenkins-trigger-cookies.txt \
+        -H "${crumb_field}: ${crumb_value}" \
         "http://localhost:18080/job/boxco-pipeline/job/${encoded}/build" 2>/dev/null || echo "0")
 
     if [[ "$status" == "201" ]]; then
@@ -437,11 +515,10 @@ cat > credentials.txt << EOF
 
  GitHub push → smee.io → Jenkins builds → Argo CD syncs → ~30 sec ✨
 
- DEMO RESET
+ PIPELINE RESET
  ──────────────────────────────────────────────────────────────────
  Normal reset     → Jenkins → boxco-pipeline → main → Build Now
  After restart    → ./scripts/start.sh, then build all 3 branches
- Nuclear reset    → git checkout v1.0-working-demo
 ═══════════════════════════════════════════════════════════════════
 EOF
 
