@@ -71,14 +71,19 @@ spec:
 
         // ── Guard ─────────────────────────────────────────────────────────────
         // Prevents a recursive loop when Jenkins commits manifest updates back
-        // to main. Any commit with [skip ci] in the message is ignored.
+        // to main. Any commit with [skip ci] in the message is ignored,
+        // UNLESS the build was triggered manually by a user.
         stage('Check [skip ci]') {
             steps {
                 script {
-                    def msg = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
-                    if (msg.contains('[skip ci]')) {
-                        currentBuild.result = 'NOT_BUILT'
-                        error("Skipping — commit contains [skip ci]")
+                    def causes = currentBuild.getBuildCauses()
+                    def isManual = causes.any { it._class?.contains('UserIdCause') }
+                    if (!isManual) {
+                        def msg = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+                        if (msg.contains('[skip ci]')) {
+                            currentBuild.result = 'NOT_BUILT'
+                            error("Skipping — commit contains [skip ci]")
+                        }
                     }
                 }
             }
@@ -170,7 +175,7 @@ spec:
                             sh """
                                 # Clone main — always patch the live branch Argo CD watches
                                 git clone --branch main --depth 1 \\
-                                    https://\${GIT_USER}:\${GIT_TOKEN}@github.com/simon-suh/boxcompany.git \\
+                                    https://simon-suh:\${GIT_TOKEN}@github.com/simon-suh/boxcompany.git \\
                                     manifest-repo
 
                                 cd manifest-repo
