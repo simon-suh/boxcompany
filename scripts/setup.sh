@@ -146,7 +146,10 @@ if helm list -n observability | grep -q prometheus; then
     ok "Prometheus stack already installed"
 else
     helm install prometheus prometheus-community/kube-prometheus-stack \
-        -n observability -f grafana-values.yaml --wait
+        -n observability -f grafana-values.yaml
+    echo "  Waiting for Prometheus pods to be ready..."
+    kubectl wait --for=condition=ready pod \
+        -l app.kubernetes.io/name=grafana -n observability --timeout=300s
     kubectl apply -f k8s/observability/ > /dev/null
     ok "Prometheus + Grafana installed"
 fi
@@ -287,10 +290,12 @@ else
                 \"url\": \"${SMEE_URL}\",
                 \"content_type\": \"json\"
             }
-        }")
+        }" 2>/dev/null || echo "0")
 
     if [[ "$WEBHOOK_RESPONSE" == "201" ]]; then
         ok "GitHub webhook registered → ${SMEE_URL}"
+    elif [[ "$WEBHOOK_RESPONSE" == "422" ]]; then
+        ok "GitHub webhook already exists — skipping"
     else
         warn "Webhook registration returned HTTP ${WEBHOOK_RESPONSE}"
         warn "Add manually: GitHub repo → Settings → Webhooks → Add"
