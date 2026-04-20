@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: sales-api
-        image: 192.168.49.2:30500/sales-api:scenario-2
+        image: 192.168.49.2:30500/sales-api:scenario-3
         imagePullPolicy: Always
         ports:
         - containerPort: 3001
@@ -33,7 +33,7 @@ spec:
         - name: KAFKA_BROKERS
           value: "kafka:9092"
         - name: SCENARIO
-          value: "2"
+          value: "3"
         - name: INVENTORY_API_URL
           value: "http://inventory-api:3003"
 ---
