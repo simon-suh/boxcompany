@@ -17,6 +17,13 @@ jenkins:
   numExecutors: 0
   mode: EXCLUSIVE
 
+  crumbIssuer:
+    standard:
+      excludeClientIPFromCrumb: true
+
+  remotingSecurity:
+    enabled: true
+
   securityRealm:
     local:
       allowsSignup: false
@@ -87,33 +94,10 @@ unclassified:
   gitHubConfiguration:
     apiRateLimitChecker: ThrottleForNormalize
 
-jobs:
-  - script: >
-      multibranchPipelineJob('boxco-pipeline') {
-        displayName('BoxCo Services Pipeline')
-        description('Builds all branches; updates main manifests; Argo CD deploys.')
-
-        branchSources {
-          github {
-            id('boxco-github')
-            repoOwner('simon-suh')
-            repository('boxcompany')
-            scanCredentialsId('github-credentials')
-            buildOriginBranch(true)
-            buildOriginBranchWithPR(false)
-            buildOriginPRMerge(false)
-          }
-        }
-
-        factory {
-          workflowBranchProjectFactory {
-            scriptPath('jenkins/Jenkinsfile')
-          }
-        }
-
-        orphanedItemStrategy {
-          discardOldItems {
-            numToKeep(5)
-          }
-        }
-      }
+  githubPluginConfig:
+    hookUrl: "http://localhost:8082/github-webhook/"
+    configs:
+      - apiUrl: "https://api.github.com"
+        credentialsId: "github-credentials"
+        name: "GitHub"
+        manageHooks: false
