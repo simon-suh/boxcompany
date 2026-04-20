@@ -17,6 +17,13 @@ jenkins:
   numExecutors: 0
   mode: EXCLUSIVE
 
+  crumbIssuer:
+    standard:
+      excludeClientIPFromCrumb: true
+
+  remotingSecurity:
+    enabled: true
+
   securityRealm:
     local:
       allowsSignup: false
@@ -86,3 +93,11 @@ unclassified:
 
   gitHubConfiguration:
     apiRateLimitChecker: ThrottleForNormalize
+
+  githubPluginConfig:
+    hookUrl: "http://localhost:8082/github-webhook/"
+    configs:
+      - apiUrl: "https://api.github.com"
+        credentialsId: "github-credentials"
+        name: "GitHub"
+        manageHooks: false
